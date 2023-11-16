@@ -1,0 +1,10 @@
+mkdir -p ../out
+mkdir -p ../err
+mkdir -p ../log
+mkdir -p ../outputs
+mkdir -p ../results
+mkdir -p ../checkpoints
+mkdir -p ../figures
+mkdir -p ../times
+mkdir -p ../jobs
+mkdir -p ../data

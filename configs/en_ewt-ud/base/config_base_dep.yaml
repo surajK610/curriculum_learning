@@ -1,0 +1,13 @@
+dataset:
+  dir: "data/en_ewt-ud/dataset/dep"
+  task_name: "dep"
+layer_idx: 7
+model_name: "bert-base-cased"
+probe:
+  finetune-model: "linear"
+  epochs: 2
+  batch_size: 32
+  num_labels: 54
+  input_size: 768
+  output_dir: "outputs/en_ewt-ud/dep"
+  lr: "0.001"

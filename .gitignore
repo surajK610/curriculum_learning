@@ -1,0 +1,13 @@
+*__pycache__*
+/venv
+data/
+outputs/
+datasets/
+jiant/*
+job/*
+lightning_logs/*
+models/*
+outputs/*
+venv/*
+en_ewt-ud/*
+.ipynb_checkpoints/

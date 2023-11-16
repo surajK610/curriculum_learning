@@ -1,0 +1,10 @@
+model:
+  name: "bert-base-cased"
+  num_hidden_layers: 12
+experiment: "ner"
+probe:
+  finetune-model: "linear"
+  epochs: 1
+  batch_size: 32
+  output_dir: "outputs/conll2003/cpos"
+  lr: "0.001"

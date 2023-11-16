@@ -1,0 +1,13 @@
+dataset:
+  dir: "data/en_ewt-ud/dataset/dep"
+  task_name: "dep"
+layer_idx: 10
+model_name: "google/multiberts-seed_0-step_2000k"
+probe:
+  finetune-model: "linear"
+  epochs: 1
+  batch_size: 32
+  num_labels: 53
+  input_size: 768
+  output_dir: "outputs/en_ewt-ud/dep"
+  lr: "0.001"

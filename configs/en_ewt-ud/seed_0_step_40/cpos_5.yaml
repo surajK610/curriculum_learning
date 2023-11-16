@@ -1,0 +1,13 @@
+dataset:
+  dir: "data/en_ewt-ud/dataset/cpos"
+  task_name: "cpos"
+layer_idx: 5
+model_name: "google/multiberts-seed_0-step_40k"
+probe:
+  finetune-model: "linear"
+  epochs: 1
+  batch_size: 32
+  num_labels: 17
+  input_size: 768
+  output_dir: "outputs/en_ewt-ud/cpos"
+  lr: "0.001"
