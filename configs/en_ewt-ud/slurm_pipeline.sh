@@ -32,14 +32,14 @@ num_labels_type=${num_labels[$type_index]}
 echo "Running Experiment with step: $step and type: $type"
 
 for layer in {0..12}; do
-    dirhere=$EXPERIMENT_CONFIG_DIR/seed_0_step_${step}/
+    dirhere=$EXPERIMENT_CONFIG_DIR/seed_0_step_${step}
     mkdir -p $dirhere
     if [[ "$layer" -eq 0 && "$type" == "fpos" ]]; then
         python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True
     else
         python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings False
     fi
-    cat << EOF > $/${type}_${layer}.yaml
+    cat << EOF > $dirhere/${type}_${layer}.yaml
 dataset:
   dir: "data/en_ewt-ud/dataset/${type}"
   task_name: "${type}"

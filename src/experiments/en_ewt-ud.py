@@ -74,9 +74,9 @@ def main(config):
   trainer.fit(probe, train_data_loader, dev_data_loader)
     
   val_logs = trainer.validate(probe, dev_data_loader)
-  
-  os.makedirs(os.path.join(output_dir, model_name, layer_idx), exist_ok=True)
-  with open(os.path.join(output_dir, model_name, layer_idx, "val_acc.txt"), "w") as f:
+  layer_str = "layer-" + str(layer_idx)
+  os.makedirs(os.path.join(output_dir, model_name, layer_str), exist_ok=True)
+  with open(os.path.join(output_dir, model_name, layer_str, "val_acc.txt"), "w") as f:
     f.write(str(val_logs))
 
 if __name__ == "__main__":

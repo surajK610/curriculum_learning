@@ -83,7 +83,7 @@ def words_to_input_ids_and_last_token_index(tokenizer, words):
   return inputs, last_token_index_per_word
 
 
-def generate_activations(model, tokenizer, dataset, device, split='train', task='pos'):
+def generate_activations(model, tokenizer, dataset, device, split='train', task='pos', ontonotes=False):
     task_labels = []
     model.config.output_hidden_states = True
     model.eval()
@@ -91,7 +91,10 @@ def generate_activations(model, tokenizer, dataset, device, split='train', task=
     for example in tqdm(dataset[split], desc=f'Generating activations for {split} set', total=len(dataset[split])):
         inputs, last_token_index_per_word = words_to_input_ids_and_last_token_index(tokenizer, example['tokens'])
         inputs = {k:v.to(device) for k, v in inputs.items()}
-        task_labels.append(example[f'{task}_tags'])
+        if ontonotes:
+            task_labels.append(example['tags'])
+        else:
+            task_labels.append(example[f'{task}_tags'])
         with torch.no_grad():
             output = model(**inputs)
             for i, val in enumerate(output.hidden_states):

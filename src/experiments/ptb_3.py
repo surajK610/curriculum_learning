@@ -73,7 +73,8 @@ def main(config):
         shuffle=False,
         collate_fn= lambda x: custom_pad(x, return_all=True),
     )
-    os.makedirs(os.path.join(output_dir, model_name, layer_idx), exist_ok=True)
+    layer_name = "layer-" + str(layer_idx)
+    os.makedirs(os.path.join(output_dir, model_name, layer_name), exist_ok=True)
     if config["experiment"] == "distance":
         probe = L1DistanceProbe(input_size, rep_dim, finetune_model).to(device)
         trainer = Trainer(max_epochs=num_epochs)
@@ -86,7 +87,7 @@ def main(config):
         test_distance_dspr, test_distance_dspr_list = reportDistanceSpearmanr(
             dev_prediction_batches, dev_data_loader
         )
-        with open(os.path.join(output_dir, model_name, layer_idx, "val_metrics_distance.txt"), "w") as f:
+        with open(os.path.join(output_dir, model_name, layer_name, "val_metrics_distance.txt"), "w") as f:
             f.write(f"Avg UUAS: {test_uuas:.4f}\n")
             f.write(f"Avg Distance DSpr.: {test_distance_dspr:.4f}\n")
         
@@ -101,7 +102,7 @@ def main(config):
         test_depth_dspr, test_depth_dspr_list = reportDepthSpearmanr(
             dev_prediction_batches, dev_data_loader
         )
-        with open(os.path.join(output_dir, model_name,  "val_metrics_depth.txt"), "w") as f:
+        with open(os.path.join(output_dir, model_name, layer_name, "val_metrics_depth.txt"), "w") as f:
             f.write(f"Avg Acc: {test_acc:.4f}\n")
             f.write(f"Avg Depth DSpr.: {test_depth_dspr:.4f}\n")
         

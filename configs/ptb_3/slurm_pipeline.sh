@@ -28,7 +28,7 @@ step=${steps[$step_index]}
 type=${types[$type_index]}
 
 for layer in {0..12}; do
-    dirhere=$EXPERIMENT_CONFIG_DIR/seed_0_step_${step}/
+    dirhere=$EXPERIMENT_CONFIG_DIR/seed_0_step_${step}
     mkdir -p $dirhere
     if [[ "$layer" -eq 0 && "$type" == "depth" ]]; then
         python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ptb --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True

@@ -14,7 +14,7 @@ import yaml
 
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments/utils')
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments')
-from utils.probing_utils import Probe
+from utils.probing_utils import AccuracyProbe
 from utils.data_utils import generate_activations
 
 def main(config):
@@ -46,7 +46,7 @@ def main(config):
     num_labels = task_labels.max() + 1
     input_dim = relevant_activations[i].shape[-1]
     
-    probe = Probe(input_dim, num_labels, probe_config["finetune_model"]).to(device)
+    probe = AccuracyProbe(input_dim, num_labels, probe_config["finetune_model"]).to(device)
     
     train_dataset = TensorDataset(relevant_activations[i].detach(), task_labels.view(-1, 1))
     val_dataset = TensorDataset(relevant_activations_val[i].detach(), task_labels_val.view(-1, 1))

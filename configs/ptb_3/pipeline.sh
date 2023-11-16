@@ -7,7 +7,7 @@ export EXPERIMENT_CONFIG_DIR=$LEARNING_DYNAMICS_HOME/configs/ptb_3
 export DATASET=ptb_3
 
 for i in 0 20 40 60 80 100 200 1000 1400 1600 1800 2000; do
-  dirhere = $LEARNING_DYNAMICS_HOME/$DATASET/seed_0_step_$i/
+  dirhere = $EXPERIMENT_CONFIG_DIR/seed_0_step_$i
   mkdir -p $dirhere
   for type in depth distance; do
     for layer in {0..12}; do

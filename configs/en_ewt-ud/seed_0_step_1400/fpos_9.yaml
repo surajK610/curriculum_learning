@@ -5,7 +5,7 @@ layer_idx: 9
 model_name: "google/multiberts-seed_0-step_1400k"
 probe:
   finetune-model: "linear"
-  epochs: 1
+  epochs: 4
   batch_size: 32
   num_labels: 38
   input_size: 768
