@@ -30,7 +30,7 @@ probe:
   finetune-model: "linear"
   epochs: 1
   batch_size: 32
-  num_labels: 38 ## 37 indicates unknown
+  num_labels: ${type_num_labels} ## 37 indicates unknown
   input_size: 768
   output_dir: "outputs/ontonotes/$type"
   lr: "0.001"

@@ -12,7 +12,7 @@ DATE=$(date +%m-%d)
 
 export LEARNING_DYNAMICS_HOME=/users/sanand14/data/sanand14/learning_dynamics
 export EXPERIMENT_SRC_DIR=$LEARNING_DYNAMICS_HOME/src/experiments
-export EXPERIMENT_CONFIG_DIR=$LEARNING_DYNAMICS_HOME/configs/en_ewt-ud
+export EXPERIMENT_CONFIG_DIR=$LEARNING_DYNAMICS_HOME/configs/ontonotes
 export DATASET=ontonotes
 
 module load python/3.9.0 cuda/11.1.1 gcc/10.2
