@@ -82,8 +82,8 @@ def loadTextOntonotes(input_file):
 
 def read_onto_notes_format(input_file, observation_class):
     data = []
+    idx = 0
     for cur_file in tqdm(glob.glob(input_file + '**/*.*gold_conll', recursive=True)):
-
         with open(cur_file, 'r') as in_f:
             sen = []
             ner = []
@@ -97,7 +97,8 @@ def read_onto_notes_format(input_file, observation_class):
                     continue
                 if line.strip() == '':
                     datum = {
-                            'text': sen,
+                            'index': idx,
+                            'sentence': sen,
                             'ner': ner,
                             'phrase_start': phrase_start,
                             'phrase_end': phrase_end,
@@ -112,6 +113,7 @@ def read_onto_notes_format(input_file, observation_class):
                     np_end = []
                     phrase_start = []
                     phrase_end = []
+                    idx += 1
                     continue
                 vals = line.split()
                 sen.append(vals[3])

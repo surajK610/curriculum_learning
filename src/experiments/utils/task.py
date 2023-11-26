@@ -309,25 +309,25 @@ class NerTask(Task):
     Should be overriden in implementing classes.
     """
     ner_categories = {
-        0: "CARDINAL",
-        1: "DATE",
-        2: "EVENT",
-        3: "FAC",
-        4: "GPE",
-        5: "LANGUAGE",
-        6: "LAW",
-        7: "LOC",
-        8: "MONEY",
-        9: "NORP",
-        10: "ORDINAL",
-        11: "ORG",
-        12: "PERCENT",
-        13: "PERSON",
-        14: "PRODUCT",
-        15: "QUANTITY",
-        16: "TIME",
-        17: "WORK_OF_ART",
-        18: "*"
+    'CARDINAL': 0,
+    'DATE': 1,
+    'EVENT': 2,
+    'FAC': 3,
+    'GPE': 4,
+    'LANGUAGE': 5,
+    'LAW': 6,
+    'LOC': 7,
+    'MONEY': 8,
+    'NORP': 9,
+    'ORDINAL': 10,
+    'ORG': 11,
+    'PERCENT': 12,
+    'PERSON': 13,
+    'PRODUCT': 14,
+    'QUANTITY': 15,
+    'TIME': 16,
+    'WORK_OF_ART': 17,
+    '*': 18
     }
     # print(observation.upos_sentence)
     return torch.tensor([ner_categories[elt] for elt in observation.ner])
@@ -355,33 +355,3 @@ class PhrEndTask(Task):
     "E": 1,   
     }
     return torch.tensor([end_map[elt] for elt in observation.phrase_end])
-
-class NerTask(Task):
-  
-  @staticmethod
-  def labels(observation):
-    """Maps an observation to a matrix of labels.
-    Should be overriden in implementing classes.
-    """
-    ner_categories = {
-    "ADJ": 0,    # Adjective
-    "ADP": 1,    # Adposition
-    "ADV": 2,    # Adverb
-    "AUX": 3,    # Auxiliary verb
-    "CCONJ": 4,   # Coordinating conjunction
-    "DET": 5,    # Determiner
-    "INTJ": 6,   # Interjection
-    "NOUN": 7,   # Noun
-    "NUM": 8,    # Numeral
-    "PART": 9,   # Particle
-    "PRON": 10,  # Pronoun
-    "PROPN": 11, # Proper noun
-    "PUNCT": 12, # Punctuation
-    "SCONJ": 13, # Subordinating conjunction
-    "SYM": 14,   # Symbol
-    "VERB": 15,  # Verb
-    "X": 16,      # Other
-    "_": 16
-    }
-    # print(observation.upos_sentence)
-    return torch.tensor([ner_categories[elt] for elt in observation.ner])

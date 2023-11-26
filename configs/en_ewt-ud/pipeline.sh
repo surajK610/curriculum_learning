@@ -10,6 +10,13 @@ for i in 0 20 40 60 80 100 200 1000 1400 1600 1800 2000; do
   dirhere = $EXPERIMENT_CONFIG_DIR/seed_0_step_$i
   mkdir -p $dirhere
   for type in fpos cpos dep; do
+    if type == fpos; then
+    type_num_labels = 38
+    elif type == cpos; then
+    type_num_labels = 17
+    else
+    type_num_labels = 54
+    fi
     for layer in {0..12}; do
       if layer == 0; then
         python3 src/experiments/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_{$i}k --layer-index $layer --compute-embeddings True

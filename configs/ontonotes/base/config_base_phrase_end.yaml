@@ -1,13 +1,13 @@
 dataset:
-  dir: "data/ontonotes/dataset/ner"
-  task_name: "ner"
+  dir: "data/ontonotes/dataset/phrase_end"
+  task_name: "phrase_end"
 layer_idx: 7
 model_name: "bert-base-cased"
 probe:
   finetune-model: "linear"
   epochs: 1
   batch_size: 32
-  num_labels: 19
+  num_labels: 2
   input_size: 768
-  output_dir: "outputs/ontonotes/ner"
+  output_dir: "outputs/ontonotes/phrase_end"
   lr: "0.001"

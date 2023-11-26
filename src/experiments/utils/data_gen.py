@@ -94,13 +94,14 @@ def main(args):
     # NOTE: only call these functions once 
     if args.compute_embeddings == "True":
         print(train_hdf5_path)
-    saveBertHDF5(train_hdf5_path, train_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
-    saveBertHDF5(dev_hdf5_path, dev_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
-    saveBertHDF5(test_hdf5_path, test_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
+        saveBertHDF5(train_hdf5_path, train_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
+        saveBertHDF5(dev_hdf5_path, dev_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
+        saveBertHDF5(test_hdf5_path, test_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
         
     if args.dataset == "ontonotes":
         observation_fieldnames = [
-            "text",
+            "index",
+            "sentence",
             "ner",
             "phrase_start",
             "phrase_end",

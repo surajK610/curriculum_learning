@@ -1,69 +1,24 @@
-from transformers import AutoTokenizer, BertModel
-
+'''
+Exactly the same script run as en_ewt-ud.py, so reusing that code w/
+just file changed to ontonotes.py so that naming convention holds
+'''
 import torch
-from datasets import load_dataset
 
 import os
 from pytorch_lightning import Trainer
-from torch.utils.data import DataLoader, TensorDataset
-from tqdm import tqdm
+from torch.utils.data import DataLoader
 import sys
 import argparse
-import json
+import numpy as np
 import yaml
+import dill
 
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments/utils')
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments')
 from utils.probing_utils import AccuracyProbe
-from utils.data_utils import generate_activations
+from utils.data_utils import custom_pad_pos
+from en_ewt_ud import main
 
-def main(config):
-  home = os.environ['LEARNING_DYNAMICS_HOME']
-  if "device" not in config:
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-  else:
-    device = config["device"]
-    
-  model_config = config["model"]
-  model_name_save = model_config["name"].split('/')[-1] if "google" in model_config["name"] else "base"
-  tokenizer = AutoTokenizer.from_pretrained(model_config["name"], use_fast=True)
-  model = BertModel.from_pretrained(model_config["name"]).to(device)
-  model.eval()
-  layers_to_save = ['embeddings'] + [f'encoder.layer.{i}' for i in range(model_config["num_hidden_layers"])]  
-  if config["experiment"] == "ner":
-    dataset = load_dataset("tner/ontonotes5")  
-    relevant_activations, task_labels = generate_activations(model, tokenizer, 
-                                                            dataset, device, 
-                                                            split='test', ontonotes=True)
-    relevant_activations_val, task_labels_val = generate_activations(model, tokenizer, 
-                                                                    dataset, device, 
-                                                                    split='validation', ontonotes=True)
-    # relevant_activations, task_labels = relevant_activations_val, task_labels_val
-    probe_config = config["probe"]
-    val_logs = {}
-    for i, layer in enumerate(layers_to_save):
-      print('Training probe for layer', layer)
-      num_labels = task_labels.max() + 1
-      input_dim = relevant_activations[i].shape[-1]
-      
-      probe = AccuracyProbe(input_dim, num_labels, probe_config["finetune_model"]).to(device)
-      
-      train_dataset = TensorDataset(relevant_activations[i].detach(), task_labels.view(-1, 1))
-      val_dataset = TensorDataset(relevant_activations_val[i].detach(), task_labels_val.view(-1, 1))
-
-      train_dataloader = DataLoader(train_dataset, batch_size=int(probe_config["batch_size"]), shuffle=True)
-      val_dataloader = DataLoader(val_dataset, batch_size=int(probe_config["batch_size"]), shuffle=False)
-      
-      trainer = Trainer(max_epochs=probe_config["epochs"]) ## start w/ 1 epoch
-      trainer.fit(probe, train_dataloader, val_dataloader)
-
-      val_logs[layer] = trainer.validate(probe, val_dataloader)
-      
-    output_dir = os.path.join(home, probe_config["output_dir"], model_name_save)
-    os.makedirs(output_dir, exist_ok=True)
-    json.dump(val_logs, open(os.path.join(output_dir, "layer_val_acc.json"), "w"))
-    ## f"outputs/task/results/probe-{config['finetune_model']}-step={config.step}-seed={config.seed}.json"
-      
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("--config", required=True, type=str, help="path to config file")
