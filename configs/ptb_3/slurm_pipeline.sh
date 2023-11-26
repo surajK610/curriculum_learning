@@ -52,3 +52,10 @@ probe:
 EOF
     python3 $EXPERIMENT_SRC_DIR/ptb_3.py --config $dirhere/${type}_${layer}.yaml
 done
+
+if $(SLURM_ARRAY_TASK_ID) == 23:
+  python3 src/collate_metrics.py --exp depth --dataset ptb_3 --metric "Root Acc"
+  python3 src/collate_metrics.py --exp depth --dataset ptb_3 --metric "NSpr"
+  python3 src/collate_metrics.py --exp distance --dataset ptb_3 --metric "UUAS"
+  python3 src/collate_metrics.py --exp distance --dataset ptb_3 --metric "DSpr"
+fi

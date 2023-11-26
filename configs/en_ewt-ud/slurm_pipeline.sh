@@ -56,3 +56,9 @@ probe:
 EOF
     python3 $EXPERIMENT_SRC_DIR/en_ewt-ud.py --config $dirhere/${type}_${layer}.yaml
 done
+
+if $(SLURM_ARRAY_TASK_ID) == 35:
+  python3 src/collate_metrics.py --exp fpos --dataset en_ewt-ud --metric "Val Acc"
+  python3 src/collate_metrics.py --exp cpos --dataset en_ewt-ud --metric "Val Acc"
+  python3 src/collate_metrics.py --exp dep --dataset en_ewt-ud --metric "Val Acc"
+fi

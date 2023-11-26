@@ -34,3 +34,8 @@ probe:
     done
   done
 done
+
+python3 src/collate_metrics.py --exp depth --dataset ptb_3 --metric "Root Acc"
+python3 src/collate_metrics.py --exp depth --dataset ptb_3 --metric "NSpr"
+python3 src/collate_metrics.py --exp distance --dataset ptb_3 --metric "UUAS"
+python3 src/collate_metrics.py --exp distance --dataset ptb_3 --metric "DSpr"

@@ -39,3 +39,7 @@ probe:
     done
   done
 done
+
+python3 $EXPERIMENT_SRC_DIR/collate_metrics.py --exp ner --dataset ontonotes --metric "Val Acc"
+python3 $EXPERIMENT_SRC_DIR/collate_metrics.py --exp phrase_start --dataset ontonotes --metric "Val Acc"
+python3 $EXPERIMENT_SRC_DIR/collate_metrics.py --exp phrase_end --dataset ontonotes --metric "Val Acc"

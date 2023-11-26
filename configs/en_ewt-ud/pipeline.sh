@@ -41,3 +41,7 @@ probe:
     done
   done
 done
+
+python3 src/collate_metrics.py --exp fpos --dataset en_ewt-ud --metric "Val Acc"
+python3 src/collate_metrics.py --exp cpos --dataset en_ewt-ud --metric "Val Acc"
+python3 src/collate_metrics.py --exp dep --dataset en_ewt-ud --metric "Val Acc"

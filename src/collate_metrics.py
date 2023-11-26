@@ -31,13 +31,13 @@ def parse_val_acc_epoch(file_path):
         return None
       
 def parse_structural_metrics(file_path, parsestr):
-    accuracy = None
+    metric = None
     with open(file_path, 'r') as file:
-        for line in file:
-            if line.startswith(parsestr):
-                accuracy = float(line.split(parsestr[-1])[1].strip())
-                break 
-    return accuracy
+      for line in file:
+        if line.startswith(parsestr):
+          metric = float(line.split(":")[1].strip())
+          break 
+    return metric
   
 parse_depth_acc = lambda file_path: parse_structural_metrics(file_path, 'Avg Acc:')
 parse_depth_spr = lambda file_path: parse_structural_metrics(file_path, 'Avg Depth DSpr.: ')
@@ -79,15 +79,18 @@ def main(FLAGS):
   df = pd.DataFrame(collate_validation_accuracy(root_dir))
   df['Step'] = pd.to_numeric(df['Step'])
   df['Layer'] =pd.to_numeric( df['Layer'].apply(lambda x: x.split("-")[1]))
-  df['Layer'] = df['Layer'].apply(lambda x: layer_name_dict[f'layer-{x}'])
-  df.sort_values(by=['Step', 'Layer'], inplace=True)
   df = df.pivot(columns='Step', index='Layer', values=FLAGS.metric)
+  df.sort_index(axis=1, inplace=True)
+  df.sort_index(axis=0, inplace=True, ascending=False)
+  df.index= df.index.map(lambda x: layer_name_dict[f'layer-{x}'])
+  
+
   
   if FLAGS.save == 'True':
     output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}.csv")
     df.to_csv(output_filename, index=True, header=True, sep='\t')
     
-  if FLAGS.plot == 'plotly' or FLAGS.plot == 'both': 
+  if (FLAGS.plot == 'plotly') or (FLAGS.plot == 'both'): 
     df.columns = df.columns.astype(str)
     fig = go.Figure(data=go.Heatmap(
     z=df.values,
@@ -99,16 +102,16 @@ def main(FLAGS):
         xaxis_title='Step (In Thousands)',
         yaxis_title='Layer'
     )
-    output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}__heatmap.json")
+    output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.json")
     fig.write_json(output_filename)
     
-  elif FLAGS.plot == 'plt' or FLAGS.plot == 'both':
+  if (FLAGS.plot == 'plt') or (FLAGS.plot == 'both'):
     plt.figure(figsize=(10, 8))
     sns.heatmap(df, annot=True, fmt=".2f", cmap='viridis', annot_kws={"size": 10})
     plt.xlabel('Step (In Thousands)')
     plt.ylabel('Layer')
     plt.tight_layout()
-    output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}__heatmap.png")
+    output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.png")
     plt.savefig(output_filename, dpi=300)
     plt.close()
     
