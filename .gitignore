@@ -11,3 +11,4 @@ outputs/*
 venv/*
 en_ewt-ud/*
 .ipynb_checkpoints/
+configs/*/seed_*_step_*/*

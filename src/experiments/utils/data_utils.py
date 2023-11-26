@@ -15,6 +15,8 @@ import h5py
 from tqdm import tqdm
 from itertools import chain
 
+import glob
+
 def dataStat(data):
     """
     Statistics of text.
@@ -61,6 +63,95 @@ def loadText(data_path):
 
     return text
 
+
+def loadTextOntonotes(input_file):
+    sentences = []
+    for cur_file in tqdm(glob.glob(input_file + '**/*.*gold_conll', recursive=True)):
+        with open(cur_file, 'r') as in_f:
+            sen = []
+            for line in in_f:
+                if line.startswith('#'):
+                    continue
+                if not line.strip():
+                    sentences.append(" ".join(sen))
+                    sen = []
+                    continue
+                vals = line.split()
+                sen.append(vals[3])
+    return sentences
+
+def read_onto_notes_format(input_file, observation_class):
+    data = []
+    for cur_file in tqdm(glob.glob(input_file + '**/*.*gold_conll', recursive=True)):
+
+        with open(cur_file, 'r') as in_f:
+            sen = []
+            ner = []
+            np_start = []
+            np_end = []
+            phrase_start = []
+            phrase_end = []
+            prev_ner = ''
+            for line in in_f:
+                if line.startswith('#'):
+                    continue
+                if line.strip() == '':
+                    datum = {
+                            'text': sen,
+                            'ner': ner,
+                            'phrase_start': phrase_start,
+                            'phrase_end': phrase_end,
+                            'np_start': np_start,
+                            'np_end': np_end,
+                            'embeddings': None,
+                            }
+                    data.append(observation_class(**datum))
+                    sen = []
+                    ner = []
+                    np_start = []
+                    np_end = []
+                    phrase_start = []
+                    phrase_end = []
+                    continue
+                vals = line.split()
+                sen.append(vals[3])
+
+                cur_ner = vals[10]
+                if cur_ner.startswith('('):
+                    cur_ner = cur_ner[1:]
+                    prev_ner = cur_ner
+                if cur_ner.endswith(')'):
+                    cur_ner = prev_ner[:-1]
+                    prev_ner = ''
+                if prev_ner != '':
+                    cur_ner = prev_ner
+                if cur_ner != '*' and cur_ner.endswith('*'):
+                    cur_ner = cur_ner[:-1]
+                ner.append(cur_ner)
+
+                constituency = vals[5]
+
+                if '(NP' in constituency:
+                    np_start.append('S')
+                else:
+                    np_start.append('NS')
+
+                if 'NP)' in constituency:
+                    np_end.append('E')
+                else:
+                    np_end.append('NE')
+
+                if constituency.startswith('('):
+                    phrase_start.append('S')
+                else:
+                    phrase_start.append('NS')
+
+                if constituency.endswith(')'):
+                    phrase_end.append('E')
+                else:
+                    phrase_end.append('NE')
+
+    return data
 
 def words_to_input_ids_and_last_token_index(tokenizer, words):
   inputs = tokenizer(words, return_tensors='pt', is_split_into_words=True) 

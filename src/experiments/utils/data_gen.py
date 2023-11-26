@@ -15,8 +15,8 @@ from tqdm import tqdm
 from datasets import load_dataset
 
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments/utils')
-from data_utils import loadText, saveBertHDF5, get_observation_class, load_conll_dataset, embedBertObservation, ObservationIterator
-from task import ParseDistanceTask, ParseDepthTask, CPosTask, FPosTask, DepTask
+from data_utils import loadText, loadTextOntonotes, saveBertHDF5, get_observation_class, load_conll_dataset, embedBertObservation, ObservationIterator, read_onto_notes_format
+from task import ParseDistanceTask, ParseDepthTask, CPosTask, FPosTask, DepTask, NerTask, PhrStartTask, PhrEndTask
 
 import argparse
 
@@ -33,6 +33,11 @@ def main(args):
         train_data_path = os.path.join(data_path, "en_ewt-ud-train.conllu")
         dev_data_path = os.path.join(data_path, "en_ewt-ud-dev.conllu")
         test_data_path = os.path.join(data_path, "en_ewt-ud-test.conllu")
+    elif args.dataset == "ontonotes":
+        data_path = os.path.join(home, "data/ontonotes/")
+        train_data_path = os.path.join(data_path, "conll-2012/v4/data/train/data/english/annotations/")
+        dev_data_path = os.path.join(data_path, "conll-2012/v4/data/development/data/english/annotations/")
+        test_data_path = os.path.join(data_path, "conll-2012/v4/data/development/data/english/annotations/")
     else:
         raise ValueError("Unknown dataset: " + args.dataset)
     
@@ -44,6 +49,7 @@ def main(args):
     test_hdf5_path = os.path.join(data_path, "embeddings", save_model_name, "raw.test.layers.hdf5")
     layer_index = args.layer_index #7
     task_name = args.task_name #"distance"
+    
     device = th.device("cuda:0" if th.cuda.is_available() else "cpu")
 
     os.makedirs(os.path.join(data_path, "dataset", task_name, save_model_name), exist_ok=True)
@@ -67,9 +73,14 @@ def main(args):
         "test-layer-" + str(layer_index) + ".pt",
     )
     
-    train_text = loadText(train_data_path)
-    dev_text = loadText(dev_data_path)
-    test_text = loadText(test_data_path)
+    if args.dataset == "ontonotes":
+        train_text = loadTextOntonotes(train_data_path)
+        dev_text = loadTextOntonotes(dev_data_path)
+        test_text = loadTextOntonotes(test_data_path)
+    else:    
+        train_text = loadText(train_data_path)
+        dev_text = loadText(dev_data_path)
+        test_text = loadText(test_data_path)
 
     tokenizer = BertTokenizer.from_pretrained(model_name)
     bert = BertModel.from_pretrained(model_name)
@@ -83,29 +94,44 @@ def main(args):
     # NOTE: only call these functions once 
     if args.compute_embeddings == "True":
         print(train_hdf5_path)
-        saveBertHDF5(train_hdf5_path, train_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
-        saveBertHDF5(dev_hdf5_path, dev_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
-        saveBertHDF5(test_hdf5_path, test_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
+    saveBertHDF5(train_hdf5_path, train_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
+    saveBertHDF5(dev_hdf5_path, dev_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
+    saveBertHDF5(test_hdf5_path, test_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
+        
+    if args.dataset == "ontonotes":
+        observation_fieldnames = [
+            "text",
+            "ner",
+            "phrase_start",
+            "phrase_end",
+            "np_start",
+            "np_end",
+            "embeddings",
+        ]
+        observation_class = get_observation_class(observation_fieldnames)
+        train_observations = read_onto_notes_format(train_data_path, observation_class)
+        dev_observations = read_onto_notes_format(dev_data_path, observation_class)
+        test_observations = read_onto_notes_format(test_data_path, observation_class)
+    else:
+        observation_fieldnames = [
+            "index",
+            "sentence",
+            "lemma_sentence",
+            "upos_sentence",
+            "xpos_sentence",
+            "morph",
+            "head_indices",
+            "governance_relations",
+            "secondary_relations",
+            "extra_info",
+            "embeddings",
+        ]
+        
+        observation_class = get_observation_class(observation_fieldnames)
 
-    observation_fieldnames = [
-        "index",
-        "sentence",
-        "lemma_sentence",
-        "upos_sentence",
-        "xpos_sentence",
-        "morph",
-        "head_indices",
-        "governance_relations",
-        "secondary_relations",
-        "extra_info",
-        "embeddings",
-    ]
-
-    observation_class = get_observation_class(observation_fieldnames)
-
-    train_observations = load_conll_dataset(train_data_path, observation_class)
-    dev_observations = load_conll_dataset(dev_data_path, observation_class)
-    test_observations = load_conll_dataset(test_data_path, observation_class)
+        train_observations = load_conll_dataset(train_data_path, observation_class)
+        dev_observations = load_conll_dataset(dev_data_path, observation_class)
+        test_observations = load_conll_dataset(test_data_path, observation_class)
 
     train_observations = embedBertObservation(
         train_hdf5_path, train_observations, tokenizer, observation_class, layer_index
@@ -127,6 +153,12 @@ def main(args):
         task = FPosTask()
     elif task_name == "dep":
         task = DepTask()
+    elif task_name == "ner":
+        task = NerTask()
+    elif task_name == "phrase_start":
+        task = PhrStartTask()
+    elif task_name == "phrase_end":
+        task = PhrEndTask()
     else:
         raise ValueError("Unknown task name: " + task_name)
     
