@@ -58,7 +58,7 @@ EOF
 done
 
 if $(SLURM_ARRAY_TASK_ID) == 35:
-  python3 $EXPERIMENT_SRC_DIR/collate_metrics.py --exp ner --dataset ontonotes --metric "Val Acc"
-  python3 $EXPERIMENT_SRC_DIR/collate_metrics.py --exp phrase_start --dataset ontonotes --metric "Val Acc"
-  python3 $EXPERIMENT_SRC_DIR/collate_metrics.py --exp phrase_end --dataset ontonotes --metric "Val Acc"
+  python3 src/collate_metrics.py --exp ner --dataset ontonotes --metric "Val Acc"
+  python3 src/collate_metrics.py --exp phrase_start --dataset ontonotes --metric "Val Acc"
+  python3 src/collate_metrics.py --exp phrase_end --dataset ontonotes --metric "Val Acc"
 fi
