@@ -105,15 +105,13 @@ def main(FLAGS):
           following_idx = df.index[df.index.get_loc(max_change_idx) - 1]
         else:
           following_idx = max_change_idx
-        # print(max_change_idx, following_idx)
-        # max_change_pos = df.index.get_loc(max_change_idx) if pd.notnull(max_change_idx) else None
-        noise = np.random.uniform(-0.1, 0.1, 1)[0]
+       
         fig.add_trace(go.Scatter(
             x=[idx, idx+1],
             y=[following_idx, following_idx],
             mode='lines',
-            line=dict(color=color, width=5),
-            opacity=0.7,
+            line=dict(color=color, width=20-2*i),
+            opacity=1,
             showlegend=True if idx == 0 else False,  
             name=path.split("/")[2]  
         ))
