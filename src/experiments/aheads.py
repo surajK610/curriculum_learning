@@ -14,6 +14,15 @@ import yaml
 import argparse
 import pandas as pd
 from tqdm import tqdm
+import sys
+
+sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments/utils')
+sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments')
+
+from utils.probing_utils import AccuracyProbe
+from torch.utils.data import DataLoader, TensorDataset
+from pytorch_lightning import Trainer
+
 
 from transformer_lens import HookedTransformer
 from transformer_lens.utils import is_square
@@ -45,17 +54,6 @@ SEQ_LEN_ERR = (
 
 DET_PAT_NOT_SQUARE_ERR = "The detection pattern must be a lower triangular matrix of shape (sequence_length, sequence_length); sequence_length=%d; got detection patern of shape %s"
 
-### classify from 
-def probe_residuals():
-  torch.manual_seed(0)
-  model = HookedTransformer.from_pretrained(MODEL, checkpoint_value=512, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
-  model.eval()
-  model.requires_grad_(False)
-  dataset = create_repeats_dataset(num_samples=50, min_vector_size=5, max_vector_size=30, min_num_repeats=5, max_num_repeats=10, max_vocab=30)
-  ## [0, 30) is dataset possible tokens
-  previous_head_labels = 
-  
-  pass
 
 def detect_head_batch(model, tokens_list, detection_pattern):
   batch_scores = [detect_head(model, tokens, detection_pattern) for tokens in tqdm(tokens_list)]
@@ -110,15 +108,100 @@ def create_repeats_dataset(num_samples=50, min_vector_size=5, max_vector_size=50
     dataset.append(tokens)
   return dataset
 
+
+def get_previous_token_probing_ds(num_samples=50, min_vector_size=5, max_vector_size=50, max_vocab=PYTHIA_VOCAB_SIZE):
+  """Creates a dataset for the experiment."""
+  dataset = []
+  labels = []
+  for _ in range(num_samples):
+    vector_size = torch.randint(min_vector_size, max_vector_size, (1,)).item()
+    tokens = torch.randint(0, max_vocab, (1, vector_size))
+    dataset.append(tokens)
+  return dataset
+
+def generate_ahead_token_dataset(model, num_samples, min_vector_size=3, max_vector_size=10, max_vocab=30, 
+                                type : HeadName ="duplicate_token_head", device="cpu"):
+    task_labels = []
+    model.eval()
+    relevant_activations = defaultdict(list)    
+    for _ in tqdm(range(num_samples), desc=f'Generating activations for {type} dataset'):
+        vector_size = torch.randint(min_vector_size, max_vector_size, (1,)).item()
+        tokens = torch.randint(0, max_vocab, (1, vector_size))
+        if type == "duplicate_token_head":
+          labels = torch.tensor([[0] * vector_size + [1] * vector_size]) # no duplicate until repeat
+          tokens = tokens.repeat((1, 2)) # repeat twice (maybe try repeat more in future)
+          idxs = torch.arange(0, vector_size*2)
+        elif type == "induction_head":
+          labels = torch.roll(tokens, -1) # circular shift [0, 1, 2] -> [1, 2, 0]
+          tokens = tokens.repeat((1, 2)) # repeat twice (maybe try repeat more in future)
+          idxs = torch.arange(vector_size, vector_size*2)
+        elif type == "previous_token_head":
+          labels = tokens[:, :-1] # first token has no previous token
+          idxs = torch.arange(1, vector_size) # no repeat for previous token
+        else:
+          raise ValueError(f"type must be one of {HEAD_NAMES}")
+        
+        task_labels.append(labels.to(device))
+        with torch.no_grad():
+          _, cache = model.run_with_cache(tokens.to(device))
+          cache = cache.accumulated_resid()
+          for i, val in enumerate(cache):
+            relevant_activations[i].append(val.squeeze(0)[idxs, :])
+    task_labels = torch.concat(task_labels, dim=1).to(device)
+    for i in relevant_activations:
+        relevant_activations[i] = torch.vstack(relevant_activations[i])
+    return relevant_activations, task_labels
+
 def main(FLAGS):
   if FLAGS.probe_residuals == "True":
+    
     torch.manual_seed(0)
-    model = HookedTransformer.from_pretrained(MODEL, checkpoint_value=512, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
-    model.eval()
-    model.requires_grad_(False)
-    dataset = create_repeats_dataset(num_samples=5000, min_vector_size=5, max_vector_size=30, min_num_repeats=5, max_num_repeats=10, max_vocab=30)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
+    # dict_df_heads = {detection_pattern: pd.DataFrame(columns=PYTHIA_CHECKPOINTS_OLD, index=range(N_LAYERS+1)) for detection_pattern in HEAD_NAMES}
     
+    output_dir = "outputs/aheads"
+    os.makedirs(output_dir, exist_ok=True)
+    # for checkpoint in PYTHIA_CHECKPOINTS_OLD:
+    checkpoint = FLAGS.checkpoint
+    print("Number of Steps: ", checkpoint)
+    model = HookedTransformer.from_pretrained(MODEL, checkpoint_value=checkpoint, device=device)
+      # for detection_pattern in HEAD_NAMES:
+    detection_pattern = FLAGS.detection_pattern
+    relevant_activations, task_labels = generate_ahead_token_dataset(model, num_samples=5000, min_vector_size=3, max_vector_size=10, max_vocab=FLAGS.max_vocab, type=detection_pattern, device=device)
+    num_labels = task_labels.max() + 1
     
+    for i in range(model.cfg.n_layers+1):
+      print("Training probe for layer", i)
+      
+      probe = AccuracyProbe(relevant_activations[0].shape[-1], num_labels, FLAGS.finetune_model).to(device)
+      n_examples = relevant_activations[i].shape[0]
+      train_len = int(0.8 * n_examples)
+      perm = torch.randperm(n_examples)
+      shuffled_data = relevant_activations[i].detach()[perm]
+      shuffled_labels = task_labels.view(-1, 1)[perm]
+      
+      train_dataset = TensorDataset(shuffled_data[:train_len], shuffled_labels[:train_len])
+      val_dataset = TensorDataset(shuffled_data[train_len:], shuffled_labels[train_len:])
+      train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True)
+      val_dataloader = DataLoader(val_dataset, batch_size=FLAGS.batch_size, shuffle=False)
+      
+      trainer = Trainer(max_epochs=FLAGS.epochs) ## start w/ 1 epoch
+      trainer.fit(probe, train_dataloader, val_dataloader)
+      val_logs = trainer.validate(probe, val_dataloader)
+      
+      layer_str = str(i)
+      os.makedirs(os.path.join(output_dir, detection_pattern, f'{MODEL.split("/")[-1]}_{checkpoint}', layer_str), exist_ok=True)
+      with open(os.path.join(output_dir, detection_pattern, f'{MODEL.split("/")[-1]}_{checkpoint}', layer_str, "val_acc.txt"), "w") as f:
+        f.write(str(val_logs))
+      print(val_logs)
+
+    # dict_df_heads[detection_pattern][checkpoint][i] = val_logs
+                
+    # for detection_pattern in HEAD_NAMES:
+    #   dir_out = os.path.join("outputs/aheads", detection_pattern)
+    #   os.makedirs(dir_out, exist_ok=True)
+    #   dict_df_heads[detection_pattern].to_csv(os.path.join(dir_out, f"probe_{detection_pattern}.csv"), sep="\t")
   else:
     if FLAGS.dataset_path is None:
       dataset = create_repeats_dataset()
@@ -157,5 +240,12 @@ if __name__ == "__main__":
   parser.add_argument("--dataset-path", default=None, type=str, help="path where dataset is")
   parser.add_argument("--recompute", default="False", type=str, help="recompute dataset and save")
   parser.add_argument("--probe-residuals", default="False", type=str, help="probe residuals")
+  parser.add_argument("--max-vocab", default=30, type=int, help="max vocab size")
+  parser.add_argument("--finetune-model", default="linear", type=str, help="finetune model")
+  parser.add_argument("--batch-size", default=32, type=int, help="batch size")
+  parser.add_argument("--epochs", default=1, type=int, help="epochs")
+  
+  parser.add_argument("--checkpoint", default=143000, type=int, help="checkpoint")
+  parser.add_argument("--detection-pattern", default="previous_token_head", type=str, help="detection pattern")
   FLAGS = parser.parse_args()
   main(FLAGS)

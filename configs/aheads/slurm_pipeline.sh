@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=ontonotes
-#SBATCH --output=outputs/ontonotes/slurm_out/log_%a.out
-#SBATCH --error=outputs/ontonotes/slurm_out/log_%a.err
+#SBATCH --job-name=aheads
+#SBATCH --output=outputs/aheads/slurm_out/log_%a.out
+#SBATCH --error=outputs/aheads/slurm_out/log_%a.err
 #SBATCH --array=0-35%36
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
