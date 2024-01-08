@@ -190,7 +190,7 @@ def main(FLAGS):
       trainer.fit(probe, train_dataloader, val_dataloader)
       val_logs = trainer.validate(probe, val_dataloader)
       
-      layer_str = str(i)
+      layer_str = "layer-" + str(i)
       os.makedirs(os.path.join(output_dir, detection_pattern, f'{MODEL.split("/")[-1]}_{checkpoint}', layer_str), exist_ok=True)
       with open(os.path.join(output_dir, detection_pattern, f'{MODEL.split("/")[-1]}_{checkpoint}', layer_str, "val_acc.txt"), "w") as f:
         f.write(str(val_logs))

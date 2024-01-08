@@ -1,5 +1,6 @@
 *__pycache__*
 /venv
+/venv-3090
 data/
 outputs/
 datasets/
@@ -12,3 +13,4 @@ venv/*
 en_ewt-ud/*
 .ipynb_checkpoints/
 configs/*/seed_*_step_*/*
+configs/*/pythia_160m_step_*/*

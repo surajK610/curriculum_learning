@@ -128,26 +128,32 @@ def aheads_heatmaps():
   
   option = st.selectbox(
     'Which head type would you like to visualize?',
-    ('Duplicate Token Heads', 'Previous Token Heads', 'Induction Heads', 'All'))
+    ('Duplicate Token Heads', 'Previous Token Heads', 'Induction Heads', 'All', 'Probing'))
   
   task_file = {'Duplicate Token Heads': ['outputs/aheads/duplicate_token_head/max_duplicate_head_deeper_heatmap.json', 
                                          'outputs/aheads/duplicate_token_head/max_duplicate_head_heatmap.json',
                                          'outputs/aheads/duplicate_token_head/mean_duplicate_head_deeper_heatmap.json', 
-                                         'outputs/aheads/duplicate_token_head/mean_duplicate_head_heatmap.json'],
+                                         'outputs/aheads/duplicate_token_head/mean_duplicate_head_heatmap.json', 
+                                         'outputs/aheads/duplicate_token_head/Val_Acc_heatmap.json'],
                'Previous Token Heads': ['outputs/aheads/previous_token_head/max_previous_head_deeper_heatmap.json', 
                                         'outputs/aheads/previous_token_head/max_previous_head_heatmap.json', 
                                         'outputs/aheads/previous_token_head/mean_previous_head_deeper_heatmap.json', 
-                                        'outputs/aheads/previous_token_head/mean_previous_head_heatmap.json'],
+                                        'outputs/aheads/previous_token_head/mean_previous_head_heatmap.json', 
+                                        'outputs/aheads/previous_token_head/Val_Acc_heatmap.json'],
                'Induction Heads': ['outputs/aheads/induction_head/max_induction_head_deeper_heatmap.json', 
                                    'outputs/aheads/induction_head/max_induction_head_heatmap.json', 
                                    'outputs/aheads/induction_head/mean_induction_head_deeper_heatmap.json', 
-                                   'outputs/aheads/induction_head/mean_induction_head_heatmap.json'],
+                                   'outputs/aheads/induction_head/mean_induction_head_heatmap.json', 
+                                   'outputs/aheads/induction_head/Val_Acc_heatmap.json'],
                'All': ['outputs/aheads/duplicate_token_head/max_duplicate_head_deeper_heatmap.json', 
                       'outputs/aheads/duplicate_token_head/max_duplicate_head_heatmap.json', 
                       'outputs/aheads/previous_token_head/max_previous_head_deeper_heatmap.json', 
                       'outputs/aheads/previous_token_head/max_previous_head_heatmap.json',
                       'outputs/aheads/induction_head/max_induction_head_deeper_heatmap.json', 
                       'outputs/aheads/induction_head/max_induction_head_heatmap.json'],
+               'Probing': ['outputs/aheads/duplicate_token_head/Val_Acc_heatmap.json', 
+                           'outputs/aheads/previous_token_head/Val_Acc_heatmap.json', 
+                           'outputs/aheads/induction_head/Val_Acc_heatmap.json'],
                }
   st.markdown(f"<h2 style='text-align: center; color: black;'>Layer-wise Max Attention Head Detection </h2>", unsafe_allow_html=True)
   fig = retrieve_plot(task_file[option], name_idx=2)

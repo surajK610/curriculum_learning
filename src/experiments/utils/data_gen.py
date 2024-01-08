@@ -5,7 +5,7 @@ from collections import namedtuple, defaultdict
 import torch as th
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
-from transformers import BertTokenizer, BertModel
+from transformers import BertTokenizer, BertModel, GPTNeoXForCausalLM, AutoTokenizer
 
 import numpy as np
 
@@ -15,7 +15,7 @@ from tqdm import tqdm
 from datasets import load_dataset
 
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments/utils')
-from data_utils import loadText, loadTextOntonotes, saveBertHDF5, get_observation_class, load_conll_dataset, embedBertObservation, ObservationIterator, read_onto_notes_format
+from data_utils import loadText, loadTextOntonotes, savePythiaHDF5, saveBertHDF5, get_observation_class, load_conll_dataset, embedPythiaObservation, embedBertObservation, ObservationIterator, read_onto_notes_format
 from task import ParseDistanceTask, ParseDepthTask, CPosTask, FPosTask, DepTask, NerTask, PhrStartTask, PhrEndTask
 
 import argparse
@@ -43,7 +43,10 @@ def main(args):
     
     model_name = args.model_name #"bert-base-cased"
     save_model_name = model_name.split('/')[-1]
+    if "pythia" in model_name:
+        save_model_name += "-step" + str(args.model_step)
     os.makedirs(os.path.join(data_path, "embeddings", save_model_name), exist_ok=True)
+    
     train_hdf5_path = os.path.join(data_path, "embeddings", save_model_name,  "raw.train.layers.hdf5")
     dev_hdf5_path = os.path.join(data_path, "embeddings", save_model_name,  "raw.dev.layers.hdf5")
     test_hdf5_path = os.path.join(data_path, "embeddings", save_model_name, "raw.test.layers.hdf5")
@@ -81,12 +84,19 @@ def main(args):
         train_text = loadText(train_data_path)
         dev_text = loadText(dev_data_path)
         test_text = loadText(test_data_path)
-
-    tokenizer = BertTokenizer.from_pretrained(model_name)
-    bert = BertModel.from_pretrained(model_name)
+        
+    if "bert" in model_name:
+        tokenizer = BertTokenizer.from_pretrained(model_name)
+        model = BertModel.from_pretrained(model_name)
+    elif "pythia" in model_name:
+        tokenizer = AutoTokenizer.from_pretrained(model_name, revision="step"+str(args.model_step))
+        model = GPTNeoXForCausalLM.from_pretrained(model_name,revision="step"+str(args.model_step)) 
+    else:
+        raise ValueError("")
+    
     if "cuda" in device.type:
-        bert.cuda()
-    bert.eval()
+        model.cuda()
+    model.eval()
 
     LAYER_COUNT = 13
     FEATURE_COUNT = 768
@@ -94,9 +104,16 @@ def main(args):
     # NOTE: only call these functions once 
     if args.compute_embeddings == "True":
         print(train_hdf5_path)
-        saveBertHDF5(train_hdf5_path, train_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
-        saveBertHDF5(dev_hdf5_path, dev_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
-        saveBertHDF5(test_hdf5_path, test_text, tokenizer, bert, LAYER_COUNT, FEATURE_COUNT, device=device)
+        if "bert" in model_name:
+            saveBertHDF5(train_hdf5_path, train_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device)
+            saveBertHDF5(dev_hdf5_path, dev_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device)
+            saveBertHDF5(test_hdf5_path, test_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device)
+        elif "pythia" in model_name:
+            savePythiaHDF5(train_hdf5_path, train_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device)
+            savePythiaHDF5(dev_hdf5_path, dev_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device)
+            savePythiaHDF5(test_hdf5_path, test_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device)
+        else:
+            raise ValueError("")
         
     if args.dataset == "ontonotes":
         observation_fieldnames = [
@@ -133,16 +150,29 @@ def main(args):
         train_observations = load_conll_dataset(train_data_path, observation_class)
         dev_observations = load_conll_dataset(dev_data_path, observation_class)
         test_observations = load_conll_dataset(test_data_path, observation_class)
-
-    train_observations = embedBertObservation(
-        train_hdf5_path, train_observations, tokenizer, observation_class, layer_index
-    )
-    dev_observations = embedBertObservation(
-        dev_hdf5_path, dev_observations, tokenizer, observation_class, layer_index
-    )
-    test_observations = embedBertObservation(
-        test_hdf5_path, test_observations, tokenizer, observation_class, layer_index
-    )
+        
+    if "bert" in model_name:
+        train_observations = embedBertObservation(
+            train_hdf5_path, train_observations, tokenizer, observation_class, layer_index
+        )
+        dev_observations = embedBertObservation(
+            dev_hdf5_path, dev_observations, tokenizer, observation_class, layer_index
+        )
+        test_observations = embedBertObservation(
+            test_hdf5_path, test_observations, tokenizer, observation_class, layer_index
+        )
+    elif "pythia" in model_name:
+        train_observations = embedPythiaObservation(
+            train_hdf5_path, train_observations, tokenizer, observation_class, layer_index
+        )
+        dev_observations = embedPythiaObservation(
+            dev_hdf5_path, dev_observations, tokenizer, observation_class, layer_index
+        )
+        test_observations = embedPythiaObservation(
+            test_hdf5_path, test_observations, tokenizer, observation_class, layer_index
+        )
+    else:
+        raise ValueError("")     
 
     if task_name == "distance":
         task = ParseDistanceTask()
@@ -176,6 +206,7 @@ if __name__ == "__main__":
     argp = argparse.ArgumentParser()
     argp.add_argument("--model-name", default="bert-base-cased", type=str)
     argp.add_argument("--layer-index", default=7, type=int)
+    argp.add_argument("--model-step", default=143000, type=int)
     argp.add_argument("--task-name", default="distance", type=str)
     argp.add_argument("--dataset", default="ptb", type=str)
     argp.add_argument("--compute-embeddings", default="False", type=str)

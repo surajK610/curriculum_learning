@@ -27,6 +27,8 @@ def main(config):
   
   layer_idx = config["layer_idx"]
   model_name = config["model_name"].split('/')[-1]
+  if "pythia" in model_name:
+    model_name += "-step" + str(config["model_step"])
   
   probe_config = config["probe"]
   finetune_model = probe_config["finetune-model"]

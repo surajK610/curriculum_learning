@@ -17,14 +17,21 @@ import pandas as pd
 from tqdm import tqdm
 from functools import partial
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments/utils')
+sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments')
+
 from aheads import create_repeats_dataset
+
 from transformer_lens import HookedTransformer
 from transformer_lens.utils import is_square
 from transformer_lens.head_detector import (compute_head_attention_similarity_score, 
-											get_previous_token_head_detection_pattern, 
-											get_duplicate_token_head_detection_pattern,
-											get_induction_head_detection_pattern)
+                      get_previous_token_head_detection_pattern, 
+                      get_duplicate_token_head_detection_pattern,
+                      get_induction_head_detection_pattern)
+
+CORPUS = '''In linguistics and natural language processing, a corpus (pl.: corpora) or text corpus is a dataset, consisting of natively digital and older, digitalized, language resources, either annotated or unannotated.
+Annotated, they have been used in corpus linguistics for statistical hypothesis testing, checking occurrences or validating linguistic rules within a specific language territory.
+In search technology, a corpus is the collection of documents which is being searched.'''
 
 PYTHIA_VOCAB_SIZE = 50277 #50304
 N_LAYERS=12
@@ -40,19 +47,36 @@ LayerHeadTuple = Tuple[int, int]
 LayerToHead = Dict[int, List[int]]
 
 INVALID_HEAD_NAME_ERR = (
-	f"detection_pattern must be a Tensor or one of head names: {HEAD_NAMES}; got %s"
+  f"detection_pattern must be a Tensor or one of head names: {HEAD_NAMES}; got %s"
 )
 
 SEQ_LEN_ERR = (
-	"The sequence must be non-empty and must fit within the model's context window."
+  "The sequence must be non-empty and must fit within the model's context window."
 )
 
 DET_PAT_NOT_SQUARE_ERR = "The detection pattern must be a lower triangular matrix of shape (sequence_length, sequence_length); sequence_length=%d; got detection patern of shape %s"
 
 def copy_attention_head(model1, model2, layer_idx, head_idx, dataset):
-  model1.encoder.layers[layer_idx].self_attn.in_proj_weight.data[head_idx,:,:] = model2.encoder.layers[layer_idx].self_attn.in_proj_weight.data[head_idx,:,:]
-  return perplexity(model1, dataset)
-  
+  if model1.isinstance(HookedTransformer) and model2.isinstance(HookedTransformer):
+    model1.W_K.data[layer_idx, head_idx, :, :] = model2.W_K.data[layer_idx, head_idx, :, :]
+    model1.W_Q.data[layer_idx, head_idx, :, :] = model2.W_Q.data[layer_idx, head_idx, :, :]
+    model1.W_V.data[layer_idx, head_idx, :, :] = model2.W_V.data[layer_idx, head_idx, :, :]
+    model1.b_K.data[layer_idx, head_idx, :] = model2.b_K.data[layer_idx, head_idx, :]
+    model1.b_Q.data[layer_idx, head_idx, :] = model2.b_Q.data[layer_idx, head_idx, :]
+    model1.b_V.data[layer_idx, head_idx, :] = model2.b_V.data[layer_idx, head_idx, :]
+  else:
+    model1.encoder.layers[layer_idx].self_attn.in_proj_weight.data[head_idx,:,:] = model2.encoder.layers[layer_idx].self_attn.in_proj_weight.data[head_idx,:,:]
+  return perplexity(model1, dataset), perplexity(model2, dataset)
+
+def calculate_perplexity(corpus, model, device="cpu"):
+    encoded_input = model.to_tokens(corpus)
+    encoded_input = encoded_input.to(device)
+    with torch.no_grad():
+      outputs = model(encoded_input).squeeze(0)
+      loss = F.cross_entropy(outputs, encoded_input.squeeze(0), reduction='sum')/encoded_input.shape[1]
+    perplexity = torch.exp(loss).item()
+    return perplexity
+
 def perplexity(model, dataset):
   data_loader = torch.utils.data.DataLoader(dataset, batch_size=16, shuffle=False)
   with torch.no_grad():
@@ -61,15 +85,15 @@ def perplexity(model, dataset):
       outputs = model(inputs)
       loss = F.cross_entropy(outputs, targets, reduction='sum')
       total_loss += loss.item()
-      average_loss = total_loss / len(data_loader.dataset)
+    average_loss = total_loss / len(data_loader.dataset)
     return torch.exp(torch.tensor(average_loss))
 
 def hook_all_attention_patterns(
-	attn_pattern,
-	hook,
-	alt_cache,
-	layer,
-	head_idx
+  attn_pattern,
+  hook,
+  alt_cache,
+  layer,
+  head_idx
 ):
   attn_pattern[:, head_idx, :, :]  = alt_cache[hook.name][:, head_idx, :, :]
   return attn_pattern
@@ -83,40 +107,40 @@ def attention_intervention_single_input(model, token_context, token_candidate, a
 
 
 def main(FLAGS):
-	if FLAGS.dataset_path is None:
-		dataset = create_repeats_dataset()
-	else:
-		if FLAGS.recompute == "True":
-			dataset = create_repeats_dataset()
-			assert FLAGS.dataset_path is not None, "dataset path must be specified"
-			torch.save(dataset, FLAGS.dataset_path)
-		dataset = torch.load(FLAGS.dataset_path)
-	
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	
-	dict_df_heads_max = {detection_pattern: pd.DataFrame(columns=PYTHIA_CHECKPOINTS, index=range(N_LAYERS)) for detection_pattern in HEAD_NAMES}
-	dict_df_heads_mean = {detection_pattern: pd.DataFrame(columns=PYTHIA_CHECKPOINTS, index=range(N_LAYERS)) for detection_pattern in HEAD_NAMES}
-	
-	for checkpoint in PYTHIA_CHECKPOINTS:
-		print("Number of Steps: ", checkpoint)
-		model = HookedTransformer.from_pretrained(MODEL, checkpoint_value=checkpoint, device=device)
-		for detection_pattern in HEAD_NAMES:
-			batch_head_scores = detect_head_batch(model, dataset, detection_pattern)
-			max_per_layer = batch_head_scores.max(1).values
-			mean_per_layer = batch_head_scores.mean(1)
-			for i in range(model.cfg.n_layers):
-				dict_df_heads_max[detection_pattern][checkpoint][i] = max_per_layer[i].item()
-				dict_df_heads_mean[detection_pattern][checkpoint][i] = mean_per_layer[i].item()
-				
-	for detection_pattern in HEAD_NAMES:
-		dir_out = os.path.join("outputs/aheads", detection_pattern)
-		os.makedirs(dir_out, exist_ok=True)
-		dict_df_heads_max[detection_pattern].to_csv(os.path.join(dir_out, f"max_{detection_pattern}_deeper.csv"), sep="\t")
-		dict_df_heads_mean[detection_pattern].to_csv(os.path.join(dir_out, f"mean_{detection_pattern}_deeper.csv"), sep="\t")
+  if FLAGS.dataset_path is None:
+    dataset = create_repeats_dataset()
+  else:
+    if FLAGS.recompute == "True":
+      dataset = create_repeats_dataset()
+      assert FLAGS.dataset_path is not None, "dataset path must be specified"
+      torch.save(dataset, FLAGS.dataset_path)
+    dataset = torch.load(FLAGS.dataset_path)
+  
+  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  
+  dict_df_heads_max = {detection_pattern: pd.DataFrame(columns=PYTHIA_CHECKPOINTS, index=range(N_LAYERS)) for detection_pattern in HEAD_NAMES}
+  dict_df_heads_mean = {detection_pattern: pd.DataFrame(columns=PYTHIA_CHECKPOINTS, index=range(N_LAYERS)) for detection_pattern in HEAD_NAMES}
+  
+  for checkpoint in PYTHIA_CHECKPOINTS:
+    print("Number of Steps: ", checkpoint)
+    model = HookedTransformer.from_pretrained(MODEL, checkpoint_value=checkpoint, device=device)
+    for detection_pattern in HEAD_NAMES:
+      batch_head_scores = detect_head_batch(model, dataset, detection_pattern)
+      max_per_layer = batch_head_scores.max(1).values
+      mean_per_layer = batch_head_scores.mean(1)
+      for i in range(model.cfg.n_layers):
+        dict_df_heads_max[detection_pattern][checkpoint][i] = max_per_layer[i].item()
+        dict_df_heads_mean[detection_pattern][checkpoint][i] = mean_per_layer[i].item()
+        
+  for detection_pattern in HEAD_NAMES:
+    dir_out = os.path.join("outputs/aheads", detection_pattern)
+    os.makedirs(dir_out, exist_ok=True)
+    dict_df_heads_max[detection_pattern].to_csv(os.path.join(dir_out, f"max_{detection_pattern}_deeper.csv"), sep="\t")
+    dict_df_heads_mean[detection_pattern].to_csv(os.path.join(dir_out, f"mean_{detection_pattern}_deeper.csv"), sep="\t")
 
 if __name__ == "__main__":
-	parser = argparse.ArgumentParser()
-	parser.add_argument("--dataset-path", default=None, type=str, help="path where dataset is")
-	parser.add_argument("--recompute", default="False", type=str, help="recompute dataset and save")
-	FLAGS = parser.parse_args()
-	main(FLAGS)
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--dataset-path", default=None, type=str, help="path where dataset is")
+  parser.add_argument("--recompute", default="False", type=str, help="recompute dataset and save")
+  FLAGS = parser.parse_args()
+  main(FLAGS)

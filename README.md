@@ -6,7 +6,7 @@ If running this code in the Oscar (SLURM), first run `./scripts/env_setup.sh` to
 
 ### Ontonotes 
 1. Download ontonotes-release-5.0 from LDC
-2. Put ontonotes into 2012 CoNLL task format using steps [here](https://conll.cemantix.org/2012/data.html)
+2. Put ontonotes into 2012 CoNLL task format using `*_gold_skel` template and scripts with steps [here](https://conll.cemantix.org/2012/data.html)
 3. Extract `phrase_start`, `phrase_end`, and `ner` using the `data_gen.read_onto_notes_format`
 
 ### Universal Dependencies

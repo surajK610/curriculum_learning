@@ -197,6 +197,68 @@ def generate_activations(model, tokenizer, dataset, device, split='train', task=
         relevant_activations[i] = torch.vstack(relevant_activations[i])
     return relevant_activations, task_labels
 
+def savePythiaHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device):
+    model.eval()
+    with h5py.File(path, "w") as fout:
+        for index, line in enumerate(tqdm(text, desc="[saving embeddings]")):
+            line = line.strip()
+            indexed_tokens = tokenizer.tokenize(line)
+            segment_ids = [1 for x in indexed_tokens]
+            if "cuda" in device.type:
+              tokens_tensor = torch.tensor([indexed_tokens]).cuda()
+              segments_tensors = torch.tensor([segment_ids]).cuda()
+            else:
+              tokens_tensor = torch.tensor([indexed_tokens])
+              segments_tensors = torch.tensor([segment_ids])
+              
+            with torch.no_grad():
+                encoded_layers = model(
+                    tokens_tensor, segments_tensors, output_hidden_states=True
+                )
+                # embeddings + 12 layers
+                encoded_layers = encoded_layers[-1]
+            dset = fout.create_dataset(
+                str(index), (LAYER_COUNT, len(tokenized_text), FEATURE_COUNT)
+            )
+            dset[:, :, :] = np.vstack([x.cpu().numpy() for x in encoded_layers])
+
+def embedPythiaObservation(hdf5_path, observations, tokenizer, observation_class, layer_index):
+    hf = h5py.File(hdf5_path, "r")
+    indices = list(hf.keys())
+
+    single_layer_features_list = []
+
+    for index in tqdm(sorted([int(x) for x in indices]), desc="[aligning embeddings]"):
+        observation = observations[index]
+        feature_stack = hf[str(index)]
+        single_layer_features = feature_stack[layer_index]
+        tokenized_sent = tokenizer.tokenize(observation.sentence)
+        untokenized_sent = observation.sentence
+        untok_tok_mapping = match_tokenized_to_untokenized(
+            tokenized_sent, untokenized_sent
+        )
+        assert single_layer_features.shape[0] == len(tokenized_sent)
+        single_layer_features = torch.tensor(
+            np.array([
+                np.mean(
+                    single_layer_features[
+                        untok_tok_mapping[i][0] : untok_tok_mapping[i][-1] + 1, :
+                    ],
+                    axis=0,
+                )
+                for i in range(len(untokenized_sent))
+            ])
+        )
+        assert single_layer_features.shape[0] == len(observation.sentence)
+        single_layer_features_list.append(single_layer_features)
+
+    embeddings = single_layer_features_list
+    embedded_observations = []
+    for observation, embedding in zip(observations, embeddings):
+        embedded_observation = observation_class(*(observation[:-1]), embedding)
+        embedded_observations.append(embedded_observation)
+
+    return embedded_observations
 
 def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device):
     """
