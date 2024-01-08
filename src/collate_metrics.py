@@ -90,89 +90,47 @@ def collate_validation_accuracy(root_dir, dataset):
 def main(FLAGS):  
   home = os.environ['LEARNING_DYNAMICS_HOME']
   if FLAGS.gen_figure == 'True':
-    
-
-    file_paths = [
-        'outputs/en_ewt-ud/cpos/Val_Acc.csv',
+    file_paths = {
+      'semantic':
+        ['outputs/en_ewt-ud/cpos/Val_Acc.csv',
         'outputs/en_ewt-ud/fpos/Val_Acc.csv',
-        'outputs/ontonotes/ner/Val_Acc.csv'
-    ]
-    titles = ["cpos", "fpos", "ner"]
-    dataframes = [pd.read_csv(file_path, delimiter='\t', index='Layer') for file_path in file_paths]
-    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+        'outputs/ontonotes/ner/Val_Acc.csv'],
+      'syntax':
+        ['outputs/ontonotes/phrase_start/Val_Acc.csv',
+        'outputs/ontonotes/phrase_end/Val_Acc.csv',
+        'outputs/en_ewt-ud/dep/Val_Acc.csv',
+        'outputs/ptb_3/depth/Root_Acc.csv',
+        'outputs/ptb_3/distance/UUAS.csv'],
+      'algorithmic':
+        ['outputs/aheads/duplicate_token_head/Val_Acc.csv', 
+         'outputs/aheads/induction_head/Val_Acc.csv',
+         'outputs/aheads/previous_token_head/Val_Acc.csv']
+    }
+    for key, file_paths in file_paths.items():
+      n = len(file_paths)
+      titles = [s.split("/")[2] for s in file_paths]
+      if key == 'algorithmic':
+        titles = ['dup', 'ind', 'prev']
+      elif key == 'syntax':
+        titles = ['phrase start', 'phrase end', 'dep', 'depth', 'dist']
+      dataframes = [pd.read_csv(file_path, delimiter='\t').drop('Layer', axis=1) for file_path in file_paths]
+      fig, axs = plt.subplots(1, n, figsize=(5*n, 5), sharey=True)
 
-    # Plot each heatmap and set y-axis labels only for the leftmost heatmap
-    for i, (ax, df, title) in enumerate(zip(axs, dataframes, titles)):
-        sns.heatmap(df, ax=ax)
-        ax.set_title(title)
-        ax.set_ylim(0, len(df))  # Synchronize y-axis limits
-
-        if i > 0:
-            ax.set_ylabel('')  # Remove y-axis label for all but the first heatmap
-        else:
-            # Set y-axis labels from the index of the first DataFrame
-            ax.set_yticklabels(df.index)
-
-    # Adjust layout
-    plt.tight_layout()
-
-    # Show the plot
-    plt.show()
+      for i, (ax, df, title) in enumerate(zip(axs, dataframes, titles)):
+          sns.heatmap(df, ax=ax)
+          ax.set_title(title, fontsize=22)
+          if i > 0:
+              ax.set_ylabel('') 
+          else:
+              ax.set_yticklabels(df.index)
+              ax.set_ylabel('Layer', fontsize=18)
+          ax.tick_params(axis='both', which='major', labelsize=14)
+      
+      plt.tight_layout()
+      output_filename = os.path.join(home, "figures", f"{key}.png")
+      plt.savefig(output_filename)
   
-    # file_paths = [
-    #     'outputs/en_ewt-ud/cpos/Val_Acc_heatmap.json',
-    #     'outputs/en_ewt-ud/fpos/Val_Acc_heatmap.json',
-    #     'outputs/en_ewt-ud/dep/Val_Acc_heatmap.json'
-    # ]
-    # heatmaps = []
-    # for file_path in file_paths:
-    #     with open(file_path, 'r') as file:
-    #         data = json.load(file)
-    #         heatmaps.append(data['data'][0])
-
-    # fig = make_subplots(rows=1, cols=3, shared_yaxes=True, horizontal_spacing=0.08)
-
-    # for i, heatmap in enumerate(heatmaps):
-    #     fig.add_trace(
-    #         go.Heatmap(
-    #         z=heatmap['z'],
-    #         x=heatmap['x'],
-    #         y=heatmap['y'],
-    #         colorscale=heatmap['colorscale'],
-    #         colorbar=dict(
-    #             x=0.36 * i + 0.29),
-    #         ),
-    #         row=1, col=i+1
-    #     )
-    #     fig.update_yaxes(
-    #         ticklen=10,  # Increase tick length
-    #         title_standoff=15,
-    #         row=1, col=i+1
-    #     )
-    # fig.update_yaxes(autorange='reversed')
-    # titles = ["cpos", "dep", "fpos"]
-    # for i, title in enumerate(titles):
-    #     fig.add_annotation(
-    #         dict(
-    #             text=title,
-    #             xref='paper', yref='paper',
-    #             x=0.36 * i + 0.15, y=1,
-    #             xanchor='center', yanchor='bottom',
-    #             showarrow=False
-    #         )
-    #     )
-    # yaxis_ticktext = fig.layout.yaxis.tickvals
-    # yaxis_ticktext = [tick+"  " for tick in yaxis_ticktext]
-    # fig.update_yaxes(tickvals=yaxis_ticktext, ticklen=10, tickangle=-25, title_standoff=15)
-    # fig.update_xaxes(tickangle=25, title_standoff=15)
-    # fig.update_layout(
-    #     width=1500,  # Adjust the width as needed
-    #     height=400, 
-    #     )
-    # output_filename = os.path.join(home, "figures", f"ud_heatmap.png")
-    # fig.write_image(output_filename)
-    # return
-    
+   
   if FLAGS.line_graph == 'True':
     fig = go.Figure()
     layer_order = []

@@ -4,6 +4,7 @@
 data/
 outputs/
 datasets/
+figures/
 jiant/*
 job/*
 lightning_logs/*
