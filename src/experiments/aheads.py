@@ -15,6 +15,7 @@ import argparse
 import pandas as pd
 from tqdm import tqdm
 import sys
+import random
 
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments/utils')
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments')
@@ -23,7 +24,7 @@ from utils.probing_utils import AccuracyProbe
 from torch.utils.data import DataLoader, TensorDataset
 from pytorch_lightning import Trainer
 
-
+from transformers import BertModel, BertTokenizer
 from transformer_lens import HookedTransformer
 from transformer_lens.utils import is_square
 from transformer_lens.head_detector import (compute_head_attention_similarity_score, 
@@ -108,17 +109,49 @@ def create_repeats_dataset(num_samples=50, min_vector_size=5, max_vector_size=50
     dataset.append(tokens)
   return dataset
 
-
-def get_previous_token_probing_ds(num_samples=50, min_vector_size=5, max_vector_size=50, max_vocab=PYTHIA_VOCAB_SIZE):
-  """Creates a dataset for the experiment."""
-  dataset = []
-  labels = []
-  for _ in range(num_samples):
-    vector_size = torch.randint(min_vector_size, max_vector_size, (1,)).item()
-    tokens = torch.randint(0, max_vocab, (1, vector_size))
-    dataset.append(tokens)
-  return dataset
-
+def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector_size=10, max_vocab=30, 
+                                type : HeadName ="duplicate_token_head", device="cpu"):
+    task_labels = []
+    model.eval()
+    model.config.output_hidden_states = True
+    relevant_activations = defaultdict(list)    
+    for _ in tqdm(range(num_samples), desc=f'Generating activations for {type} dataset'):
+        vector_size = torch.randint(min_vector_size, max_vector_size, (1,)).item()
+        tokens = torch.randint(0, max_vocab, (1, vector_size))
+        ## adds the CLS + SEP tokens
+        if type == "duplicate_token_head":
+          if random.random() < 0.5:
+            tokens = tokens.repeat((1, 2)) # repeat twice
+            idx = torch.randint(0, vector_size*2, (1,))
+            label = torch.tensor([[1]])
+          else:
+            idx = torch.randint(0, vector_size, (1,)) 
+            label = torch.tensor([[0]])
+        elif type == "induction_head":
+          mask_idx = torch.randint(1, vector_size, (1,)).item() # mask token
+          tokens = tokens.repeat((1, 2)) # repeat twice
+          tokens[vector_size + mask_idx] = 102 # replace second instance with MASK
+          label = tokens[:, mask_idx] # label is the token that is masked
+          idx = torch.tensor([vector_size + mask_idx - 1]) # index of the token before the mask
+        elif type == "previous_token_head":
+          idx = torch.randint(1, vector_size, (1,)) # idx
+          label = tokens[:, idx.item() - 1] # first token has no previous token
+        else:
+          raise ValueError(f"type must be one of {HEAD_NAMES}")
+        tokens = torch.concat([torch.tensor([[101]]), tokens, torch.tensor([[102]])], axis=1)
+        ## appends CLS + SEP tokens
+        idx = idx + 1
+        task_labels.append(label.to(device))
+        with torch.no_grad():
+          output = model(tokens.to(device))
+          cache = output.hidden_states
+          for i, val in enumerate(cache):
+            relevant_activations[i].append(val.squeeze(0)[idx, :])
+    task_labels = torch.concat(task_labels, dim=1).to(device)
+    for i in relevant_activations:
+        relevant_activations[i] = torch.vstack(relevant_activations[i])
+    return relevant_activations, task_labels
+  
 def generate_ahead_token_dataset(model, num_samples, min_vector_size=3, max_vector_size=10, max_vocab=30, 
                                 type : HeadName ="duplicate_token_head", device="cpu"):
     task_labels = []
@@ -154,24 +187,25 @@ def generate_ahead_token_dataset(model, num_samples, min_vector_size=3, max_vect
 
 def main(FLAGS):
   if FLAGS.probe_residuals == "True":
-    
+    print("Probing Residuals", FLAGS.detection_pattern, FLAGS.checkpoint)
     torch.manual_seed(0)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(device)
     # dict_df_heads = {detection_pattern: pd.DataFrame(columns=PYTHIA_CHECKPOINTS_OLD, index=range(N_LAYERS+1)) for detection_pattern in HEAD_NAMES}
     
     output_dir = "outputs/aheads"
     os.makedirs(output_dir, exist_ok=True)
-    # for checkpoint in PYTHIA_CHECKPOINTS_OLD:
     checkpoint = FLAGS.checkpoint
     print("Number of Steps: ", checkpoint)
-    model = HookedTransformer.from_pretrained(MODEL, checkpoint_value=checkpoint, device=device)
-      # for detection_pattern in HEAD_NAMES:
+    # model = HookedTransformer.from_pretrained(MODEL, checkpoint_value=checkpoint, device=device)
+    # save_model_name = MODEL.split("/")[-1] + "-step" + str(checkpoint)
+    model = BertModel.from_pretrained(f"google/multiberts-seed_0-step_{checkpoint}k", device=device)
+    save_model_name = f"google/multiberts-seed_0-step_{checkpoint}k".split("/")[-1]
+    # for detection_pattern in HEAD_NAMES:
     detection_pattern = FLAGS.detection_pattern
-    relevant_activations, task_labels = generate_ahead_token_dataset(model, num_samples=5000, min_vector_size=3, max_vector_size=10, max_vocab=FLAGS.max_vocab, type=detection_pattern, device=device)
+    relevant_activations, task_labels = generate_algo_task_dataset(model, num_samples=40000, min_vector_size=3, max_vector_size=10, max_vocab=FLAGS.max_vocab, type=detection_pattern, device=device)
     num_labels = task_labels.max() + 1
     
-    for i in range(model.cfg.n_layers+1):
+    for i in range(model.config.num_hidden_layers+1):
       print("Training probe for layer", i)
       
       probe = AccuracyProbe(relevant_activations[0].shape[-1], num_labels, FLAGS.finetune_model).to(device)
@@ -191,8 +225,8 @@ def main(FLAGS):
       val_logs = trainer.validate(probe, val_dataloader)
       
       layer_str = "layer-" + str(i)
-      os.makedirs(os.path.join(output_dir, detection_pattern, f'{MODEL.split("/")[-1]}_{checkpoint}', layer_str), exist_ok=True)
-      with open(os.path.join(output_dir, detection_pattern, f'{MODEL.split("/")[-1]}_{checkpoint}', layer_str, "val_acc.txt"), "w") as f:
+      os.makedirs(os.path.join(output_dir, detection_pattern, save_model_name, layer_str), exist_ok=True)
+      with open(os.path.join(output_dir, detection_pattern, save_model_name, layer_str, "val_acc.txt"), "w") as f:
         f.write(str(val_logs))
       print(val_logs)
 

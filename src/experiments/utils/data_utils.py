@@ -156,33 +156,34 @@ def read_onto_notes_format(input_file, observation_class):
     return data
 
 def words_to_input_ids_and_last_token_index(tokenizer, words):
-  inputs = tokenizer(words, return_tensors='pt', is_split_into_words=True) 
-  
-  # Calculate word boundaries in terms of token indexes
-  word_ids = inputs.word_ids()
-  word_boundaries = {}
-  last_word_id = None
-  for i, word_id in enumerate(word_ids):
-    if word_id is not None:
-      if word_id != last_word_id:
-        word_boundaries[word_id] = [i]
-      else:
-        word_boundaries[word_id].append(i)
-    last_word_id = word_id
+    inputs = tokenizer(words, return_tensors='pt', is_split_into_words=True) 
+    
+    # Calculate word boundaries in terms of token indexes
+    word_ids = inputs.word_ids()
+    word_boundaries = {}
+    last_word_id = None
+    for i, word_id in enumerate(word_ids):
+        if word_id is not None:
+            if word_id != last_word_id:
+                word_boundaries[word_id] = [i]
+            else:
+                word_boundaries[word_id].append(i)
+        last_word_id = word_id
   
   # Find last token index of each word
-  last_token_index_per_word = [max(indexes) for word_id, indexes in word_boundaries.items()]
+    last_token_index_per_word = [max(indexes) for word_id, indexes in word_boundaries.items()]
   
-  return inputs, last_token_index_per_word
+    return inputs, last_token_index_per_word, word_boundaries
 
 
 def generate_activations(model, tokenizer, dataset, device, split='train', task='pos', ontonotes=False):
+    ## NOTE: This function is outdated in that it uses the last token of each word as the word representation rather than a mean
     task_labels = []
     model.config.output_hidden_states = True
     model.eval()
     relevant_activations = defaultdict(list)
     for example in tqdm(dataset[split], desc=f'Generating activations for {split} set', total=len(dataset[split])):
-        inputs, last_token_index_per_word = words_to_input_ids_and_last_token_index(tokenizer, example['tokens'])
+        inputs, last_token_index_per_word, _ = words_to_input_ids_and_last_token_index(tokenizer, example['tokens'])
         inputs = {k:v.to(device) for k, v in inputs.items()}
         if ontonotes:
             task_labels.append(example['tags'])
@@ -202,8 +203,9 @@ def savePythiaHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, dev
     with h5py.File(path, "w") as fout:
         for index, line in enumerate(tqdm(text, desc="[saving embeddings]")):
             line = line.strip()
-            indexed_tokens = tokenizer.tokenize(line)
-            segment_ids = [1 for x in indexed_tokens]
+            tokenized_text = tokenizer.tokenize(line) ## NOTE: No start of sentence token, maybe change
+            indexed_tokens = tokenizer.convert_tokens_to_ids(tokenized_text)
+            segment_ids = [1 for x in tokenized_text]
             if "cuda" in device.type:
               tokens_tensor = torch.tensor([indexed_tokens]).cuda()
               segments_tensors = torch.tensor([segment_ids]).cuda()
@@ -232,18 +234,17 @@ def embedPythiaObservation(hdf5_path, observations, tokenizer, observation_class
         observation = observations[index]
         feature_stack = hf[str(index)]
         single_layer_features = feature_stack[layer_index]
-        tokenized_sent = tokenizer.tokenize(observation.sentence)
+        tokenized_sent = tokenizer.tokenize(" ".join(observation.sentence))
         untokenized_sent = observation.sentence
-        untok_tok_mapping = match_tokenized_to_untokenized(
-            tokenized_sent, untokenized_sent
-        )
+        _, _, untok_tok_mapping = words_to_input_ids_and_last_token_index(tokenizer, observation.sentence)
+
         assert single_layer_features.shape[0] == len(tokenized_sent)
         single_layer_features = torch.tensor(
             np.array([
                 np.mean(
                     single_layer_features[
                         untok_tok_mapping[i][0] : untok_tok_mapping[i][-1] + 1, :
-                    ],
+                    ], ## mean across words
                     axis=0,
                 )
                 for i in range(len(untokenized_sent))
@@ -471,7 +472,6 @@ def match_tokenized_to_untokenized(tokenized_sent, untokenized_sent):
         tokenized_sent_index += 1
 
     return mapping
-
 
 def custom_pad_pos(batch_observations, use_disk_embeddings=True, return_all=False):
     """

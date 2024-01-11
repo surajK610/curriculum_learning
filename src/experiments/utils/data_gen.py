@@ -75,7 +75,7 @@ def main(args):
         save_model_name,
         "test-layer-" + str(layer_index) + ".pt",
     )
-    
+
     if args.dataset == "ontonotes":
         train_text = loadTextOntonotes(train_data_path)
         dev_text = loadTextOntonotes(dev_data_path)
@@ -89,7 +89,8 @@ def main(args):
         tokenizer = BertTokenizer.from_pretrained(model_name)
         model = BertModel.from_pretrained(model_name)
     elif "pythia" in model_name:
-        tokenizer = AutoTokenizer.from_pretrained(model_name, revision="step"+str(args.model_step))
+        tokenizer = AutoTokenizer.from_pretrained(model_name, revision="step"+str(args.model_step), add_prefix_space=True) 
+        ## maybe change first token later, but ok for now
         model = GPTNeoXForCausalLM.from_pretrained(model_name,revision="step"+str(args.model_step)) 
     else:
         raise ValueError("")
@@ -144,13 +145,13 @@ def main(args):
             "extra_info",
             "embeddings",
         ]
-        
+
         observation_class = get_observation_class(observation_fieldnames)
 
         train_observations = load_conll_dataset(train_data_path, observation_class)
         dev_observations = load_conll_dataset(dev_data_path, observation_class)
         test_observations = load_conll_dataset(test_data_path, observation_class)
-        
+
     if "bert" in model_name:
         train_observations = embedBertObservation(
             train_hdf5_path, train_observations, tokenizer, observation_class, layer_index

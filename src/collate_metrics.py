@@ -64,12 +64,19 @@ def find_directories(path):
 def find_files(path):
     return [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
   
-def collate_validation_accuracy(root_dir, dataset):
+def collate_validation_accuracy(root_dir, dataset, model):
   data = []
-  for subdir in find_directories(root_dir):
+  dirs = find_directories(root_dir)
+  if model == 'pythia':
+    dirs = [d for d in dirs if d.startswith('pythia')]
+  elif model == 'bert':
+    dirs = [d for d in dirs if 'multibert' in d]
+  for subdir in dirs:
     step = subdir.split("_")[-1][:-1] 
     if dataset == 'aheads':
       step = subdir.split("_")[-1] # no k in back
+    elif model == 'pythia':
+      step = subdir.split("step")[-1]
     if set(find_directories(os.path.join(root_dir, subdir))) == set(layer_list):
       for layer in layer_list:
         filename = find_files(os.path.join(root_dir, subdir, layer))[0]
@@ -117,14 +124,16 @@ def main(FLAGS):
       fig, axs = plt.subplots(1, n, figsize=(5*n, 5), sharey=True)
 
       for i, (ax, df, title) in enumerate(zip(axs, dataframes, titles)):
-          sns.heatmap(df, ax=ax)
-          ax.set_title(title, fontsize=22)
+          df.index = df.index[::-1]
+          sns.heatmap(df, ax=ax, annot_kws={"size":16})
+          cbar = ax.collections[0].colorbar
+          cbar.ax.tick_params(labelsize=13)
+          ax.set_title(title, fontsize=24)
           if i > 0:
-              ax.set_ylabel('') 
+            ax.set_ylabel('') 
           else:
-              ax.set_yticklabels(df.index)
-              ax.set_ylabel('Layer', fontsize=18)
-          ax.tick_params(axis='both', which='major', labelsize=14)
+            ax.set_ylabel('Layer', fontsize=22)
+          ax.tick_params(axis='both', which='major', labelsize=16)
       
       plt.tight_layout()
       output_filename = os.path.join(home, "figures", f"{key}.png")
@@ -178,7 +187,7 @@ def main(FLAGS):
   
   if FLAGS.path_to_df is None:
     root_dir = os.path.join(home, "outputs", FLAGS.dataset, FLAGS.exp)
-    df = pd.DataFrame(collate_validation_accuracy(root_dir, FLAGS.dataset))
+    df = pd.DataFrame(collate_validation_accuracy(root_dir, FLAGS.dataset, FLAGS.model))
     df['Step'] = pd.to_numeric(df['Step'])
     if FLAGS.dataset == 'aheads':
       df['Layer'] = pd.to_numeric( df['Layer'])
@@ -190,7 +199,10 @@ def main(FLAGS):
     df.index= df.index.map(lambda x: layer_name_dict[f'layer-{x}'])
     
     if FLAGS.save == 'True':
-      output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}.csv")
+      if FLAGS.model == 'bert':
+        output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}.csv")
+      elif FLAGS.model == 'pythia':
+        output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_pythia.csv")
       df.to_csv(output_filename, index=True, header=True, sep='\t')
       
   else:
@@ -229,7 +241,11 @@ def main(FLAGS):
       xaxis_title='Step (In Thousands)',
       yaxis_title='Layer'
     ) 
-    output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.json")
+    if FLAGS.model == 'bert':
+        output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.json")
+    elif FLAGS.model == 'pythia':
+      output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap_pythia.json")
+    # output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.json")
     fig.write_json(output_filename)
     
   if (FLAGS.plot == 'plt') or (FLAGS.plot == 'both'):
@@ -246,7 +262,11 @@ def main(FLAGS):
         max_val_row = df.index.get_loc(df[col].idxmax())
         ax.add_patch(patches.Rectangle((col_idx, max_val_row), 1, 1, fill=False, edgecolor='white', lw=2))
     plt.tight_layout()
-    output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.png")
+    if FLAGS.model == 'bert':
+        output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.png")
+    elif FLAGS.model == 'pythia':
+      output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap_pythia.png")
+    # output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.png")
     plt.savefig(output_filename, dpi=300)
     plt.close()
     
@@ -255,6 +275,7 @@ if __name__ == "__main__":
   argparser = argparse.ArgumentParser()
   argparser.add_argument("--save", type=str, default="True", help="save to csv")
   argparser.add_argument("--dataset", type=str, default="en_ewt-ud", help="en_ewt-ud, ptb_3, ontonotes")
+  argparser.add_argument("--model", type=str, default="bert", help="bert, pythia")
   argparser.add_argument("--exp", type=str, default="cpos", help="experiment name")
   argparser.add_argument("--metric", type=str, default="Val Acc", help="Val Acc, Root Acc, UUAS, NSpr, DSpr")
   argparser.add_argument("--plot", type=str, default="both")

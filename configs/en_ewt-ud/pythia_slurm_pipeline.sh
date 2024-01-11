@@ -2,10 +2,10 @@
 #SBATCH --job-name=en_ewt-ud
 #SBATCH --output=outputs/en_ewt-ud/slurm_out/log_%a.out
 #SBATCH --error=outputs/en_ewt-ud/slurm_out/log_%a.err
-#SBATCH --array=0-59%60
+#SBATCH --array=16-59%60
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
-#SBATCH -p 3090-gcondo --gres=gpu:1
+#SBATCH -p gpu --gres=gpu:1
 #SBATCH --cpus-per-task=1
 
 DATE=$(date +%m-%d)
@@ -15,8 +15,8 @@ export EXPERIMENT_SRC_DIR=$LEARNING_DYNAMICS_HOME/src/experiments
 export EXPERIMENT_CONFIG_DIR=$LEARNING_DYNAMICS_HOME/configs/en_ewt-ud
 export DATASET=en_ewt-ud
 
-module load python/3.9.0 cuda/11.1.1 gcc/10.2
-source $LEARNING_DYNAMICS_HOME/venv-3090/bin/activate 
+# module load python cuda
+source $LEARNING_DYNAMICS_HOME/venv/bin/activate 
 
 steps=(0 1 2 4 8 16 32 64 128 256 512 1000 2000 4000 8000 16000 32000 64000 128000 143000)
 types=(fpos cpos dep)
@@ -59,7 +59,7 @@ EOF
     python3 $EXPERIMENT_SRC_DIR/en_ewt-ud.py --config $dirhere/${type}_${layer}.yaml
 done
 
-if [ $(SLURM_ARRAY_TASK_ID) -eq 35 ]; then
+if [ $SLURM_ARRAY_TASK_ID -eq 35 ]; then
   python3 src/collate_metrics.py --exp fpos --dataset en_ewt-ud --metric "Val Acc"
   python3 src/collate_metrics.py --exp cpos --dataset en_ewt-ud --metric "Val Acc"
   python3 src/collate_metrics.py --exp dep --dataset en_ewt-ud --metric "Val Acc"

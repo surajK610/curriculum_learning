@@ -15,7 +15,7 @@ export EXPERIMENT_SRC_DIR=$LEARNING_DYNAMICS_HOME/src/experiments
 export EXPERIMENT_CONFIG_DIR=$LEARNING_DYNAMICS_HOME/configs/ontonotes
 export DATASET=ontonotes
 
-module load python/3.9.0 cuda/11.1.1 gcc/10.2
+# module load python cuda
 source $LEARNING_DYNAMICS_HOME/venv/bin/activate 
 
 python src/experiments/aheads.py --dataset-path outputs/aheads/dataset.pt --recompute False

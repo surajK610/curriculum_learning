@@ -15,7 +15,7 @@ export EXPERIMENT_SRC_DIR=$LEARNING_DYNAMICS_HOME/src/experiments
 export EXPERIMENT_CONFIG_DIR=$LEARNING_DYNAMICS_HOME/configs/ptb_3
 export DATASET=ptb_3
 
-module load python/3.9.0 cuda/11.1.1 gcc/10.2
+# module load python cuda
 source $LEARNING_DYNAMICS_HOME/venv-3090/bin/activate
 
 steps=(0 1 2 4 8 16 32 64 128 256 512 1000 2000 4000 8000 16000 32000 64000 128000 143000)
