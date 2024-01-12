@@ -43,13 +43,19 @@ def main(args):
     
     model_name = args.model_name #"bert-base-cased"
     save_model_name = model_name.split('/')[-1]
+    resid = args.resid == "True"
     if "pythia" in model_name:
         save_model_name += "-step" + str(args.model_step)
     os.makedirs(os.path.join(data_path, "embeddings", save_model_name), exist_ok=True)
-    
-    train_hdf5_path = os.path.join(data_path, "embeddings", save_model_name,  "raw.train.layers.hdf5")
-    dev_hdf5_path = os.path.join(data_path, "embeddings", save_model_name,  "raw.dev.layers.hdf5")
-    test_hdf5_path = os.path.join(data_path, "embeddings", save_model_name, "raw.test.layers.hdf5")
+    if resid:
+        train_hdf5_path = os.path.join(data_path, "embeddings", save_model_name,  "raw.train.layers.hdf5")
+        dev_hdf5_path = os.path.join(data_path, "embeddings", save_model_name,  "raw.dev.layers.hdf5")
+        test_hdf5_path = os.path.join(data_path, "embeddings", save_model_name, "raw.test.layers.hdf5")
+    else:
+        train_hdf5_path = os.path.join(data_path, "embeddings", save_model_name,  "raw.out.train.layers.hdf5")
+        dev_hdf5_path = os.path.join(data_path, "embeddings", save_model_name,  "raw.out.dev.layers.hdf5")
+        test_hdf5_path = os.path.join(data_path, "embeddings", save_model_name, "raw.out.test.layers.hdf5")
+        
     layer_index = args.layer_index #7
     task_name = args.task_name #"distance"
     
@@ -106,9 +112,9 @@ def main(args):
     if args.compute_embeddings == "True":
         print(train_hdf5_path)
         if "bert" in model_name:
-            saveBertHDF5(train_hdf5_path, train_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device)
-            saveBertHDF5(dev_hdf5_path, dev_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device)
-            saveBertHDF5(test_hdf5_path, test_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device)
+            saveBertHDF5(train_hdf5_path, train_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device, resid=resid)
+            saveBertHDF5(dev_hdf5_path, dev_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device, resid=resid)
+            saveBertHDF5(test_hdf5_path, test_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device, resid=resid)
         elif "pythia" in model_name:
             savePythiaHDF5(train_hdf5_path, train_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device)
             savePythiaHDF5(dev_hdf5_path, dev_text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device=device)
@@ -211,5 +217,6 @@ if __name__ == "__main__":
     argp.add_argument("--task-name", default="distance", type=str)
     argp.add_argument("--dataset", default="ptb", type=str)
     argp.add_argument("--compute-embeddings", default="False", type=str)
+    argp.add_argument("--resid", default="True", type=str)
     args = argp.parse_args()
     main(args)

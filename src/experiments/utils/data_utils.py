@@ -261,7 +261,7 @@ def embedPythiaObservation(hdf5_path, observations, tokenizer, observation_class
 
     return embedded_observations
 
-def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device):
+def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device, resid=True):
     """
     Takes raw text and saves BERT-cased features for that text to disk
     Adapted from the BERT readme (and using the corresponding package) at
@@ -291,6 +291,10 @@ def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, devic
                 )
                 # embeddings + 12 layers
                 encoded_layers = encoded_layers[-1]
+                if ~resid:
+                    for i in range(1, len(encoded_layers)):
+                        encoded_layers[i] = encoded_layers[i] - encoded_layers[i-1]
+                        # only contribution that is not from previous layer
             dset = fout.create_dataset(
                 str(index), (LAYER_COUNT, len(tokenized_text), FEATURE_COUNT)
             )
