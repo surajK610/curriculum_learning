@@ -1,7 +1,7 @@
 '''
 Modified from Neel Nanda's https://colab.research.google.com/github/neelnanda-io/TransformerLens/blob/main/demos/Head_Detector_Demo.ipynb#scrollTo=5ikyL8-S7u2Z
 '''
-
+#sfeature
 from collections import defaultdict
 import logging
 from typing import cast, Dict, List, Tuple, Union
@@ -130,7 +130,7 @@ def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector
         elif type == "induction_head":
           mask_idx = torch.randint(1, vector_size, (1,)).item() # mask token
           tokens = tokens.repeat((1, 2)) # repeat twice
-          tokens[vector_size + mask_idx] = 102 # replace second instance with MASK
+          tokens[:, vector_size + mask_idx] = 102 # replace second instance with MASK
           label = tokens[:, mask_idx] # label is the token that is masked
           idx = torch.tensor([vector_size + mask_idx - 1]) # index of the token before the mask
         elif type == "previous_token_head":
@@ -147,7 +147,7 @@ def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector
           cache = output.hidden_states
           for i, val in enumerate(cache):
             relevant_activations[i].append(val.squeeze(0)[idx, :])
-    task_labels = torch.concat(task_labels, dim=1).to(device)
+    task_labels = torch.concat(task_labels, dim=0).unsqueeze(0).to(device)
     for i in relevant_activations:
         relevant_activations[i] = torch.vstack(relevant_activations[i])
     return relevant_activations, task_labels
@@ -198,11 +198,12 @@ def main(FLAGS):
     print("Number of Steps: ", checkpoint)
     # model = HookedTransformer.from_pretrained(MODEL, checkpoint_value=checkpoint, device=device)
     # save_model_name = MODEL.split("/")[-1] + "-step" + str(checkpoint)
-    model = BertModel.from_pretrained(f"google/multiberts-seed_0-step_{checkpoint}k", device=device)
+    model = BertModel.from_pretrained(f"google/multiberts-seed_0-step_{checkpoint}k").to(device)
     save_model_name = f"google/multiberts-seed_0-step_{checkpoint}k".split("/")[-1]
     # for detection_pattern in HEAD_NAMES:
     detection_pattern = FLAGS.detection_pattern
     relevant_activations, task_labels = generate_algo_task_dataset(model, num_samples=40000, min_vector_size=3, max_vector_size=10, max_vocab=FLAGS.max_vocab, type=detection_pattern, device=device)
+    
     num_labels = task_labels.max() + 1
     
     for i in range(model.config.num_hidden_layers+1):

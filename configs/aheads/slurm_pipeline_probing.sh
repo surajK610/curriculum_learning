@@ -32,7 +32,7 @@ type=${types[$type_index]}
 
 python3 -m src.experiments.aheads --probe-residuals True --checkpoint $step --detection-pattern $type
 
-if [ $(SLURM_ARRAY_TASK_ID) -eq 59 ]; then
+if [ $SLURM_ARRAY_TASK_ID -eq 35 ]; then
   python3 src/collate_metrics.py --exp duplicate_token_head --dataset  aheads --metric "Val Acc"
   python3 src/collate_metrics.py --exp induction_head --dataset  aheads --metric "Val Acc"
   python3 src/collate_metrics.py --exp previous_token_head --dataset  aheads --metric "Val Acc"

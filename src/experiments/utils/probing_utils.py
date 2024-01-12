@@ -81,10 +81,10 @@ class Probe(pl.LightningModule):
 class AccuracyProbe(Probe):
   def __init__(self, num_features: int, num_output: int, finetune_model: str):
     super().__init__(num_features, num_output, finetune_model)
-    
+
   def validation_step(self, batch, batch_idx):
     loss, logs = self.step(batch)
-    self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+    self.log("val_loss", loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
     self.log("val_acc", logs["acc"], on_step=True, on_epoch=True, prog_bar=True, logger=True)
     return {"loss": loss, "val_acc": logs["acc"]}
   
