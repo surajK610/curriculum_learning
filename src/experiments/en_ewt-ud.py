@@ -26,6 +26,7 @@ def main(config):
   task_name = dataset_config["task_name"]
   
   layer_idx = config["layer_idx"]
+  resid = config["resid"]
   model_name = config["model_name"].split('/')[-1]
   if "pythia" in model_name:
     model_name += "-step" + str(config["model_step"])
@@ -78,8 +79,12 @@ def main(config):
   val_logs = trainer.validate(probe, dev_data_loader)
   layer_str = "layer-" + str(layer_idx)
   os.makedirs(os.path.join(output_dir, model_name, layer_str), exist_ok=True)
-  with open(os.path.join(output_dir, model_name, layer_str, "val_acc.txt"), "w") as f:
-    f.write(str(val_logs))
+  if resid:
+    with open(os.path.join(output_dir, model_name, layer_str, "val_acc.txt"), "w") as f:
+      f.write(str(val_logs))
+  else:
+    with open(os.path.join(output_dir, model_name, layer_str, "val_acc_out.txt"), "w") as f:
+      f.write(str(val_logs))
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()

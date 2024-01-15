@@ -9,6 +9,7 @@
 #SBATCH --cpus-per-task=1
 
 DATE=$(date +%m-%d)
+RESID=False
 
 export LEARNING_DYNAMICS_HOME=/users/sanand14/data/sanand14/learning_dynamics
 export EXPERIMENT_SRC_DIR=$LEARNING_DYNAMICS_HOME/src/experiments
@@ -32,9 +33,9 @@ for layer in {0..12}; do
     dirhere=$EXPERIMENT_CONFIG_DIR/seed_0_step_${step}
     mkdir -p $dirhere
     if [[ "$layer" -eq 0 && "$type" == "depth" ]]; then
-        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ptb --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True
+        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ptb --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True  --resid $RESID
     else
-        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ptb --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings False
+        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ptb --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings False  --resid $RESID
     fi
     cat << EOF > $dirhere/${type}_${layer}.yaml
 dataset:
@@ -44,6 +45,7 @@ experiment: "${type}"
 model_name: "google/multiberts-seed_0-step_${step}k"
 model_step: "${step}k"
 model_type: "multibert"
+resid: $RESID
 probe:
   finetune-model: "linear"
   epochs: 10

@@ -2,13 +2,14 @@
 #SBATCH --job-name=en_ewt-ud
 #SBATCH --output=outputs/en_ewt-ud/slurm_out/log_%a.out
 #SBATCH --error=outputs/en_ewt-ud/slurm_out/log_%a.err
-#SBATCH --array=23-35%36
+#SBATCH --array=0-35%36
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
 #SBATCH -p gpu --gres=gpu:1
 #SBATCH --cpus-per-task=1
 
 DATE=$(date +%m-%d)
+RESID=False
 
 export LEARNING_DYNAMICS_HOME=/users/sanand14/data/sanand14/learning_dynamics
 export EXPERIMENT_SRC_DIR=$LEARNING_DYNAMICS_HOME/src/experiments
@@ -18,8 +19,8 @@ export DATASET=en_ewt-ud
 # module load python cuda
 source $LEARNING_DYNAMICS_HOME/venv/bin/activate 
 
-# steps=(0 20 40 60 80 100 200 1000 1400 1600 1800 2000)
-steps=(120 140 160 180 300 400 500 600 700 800 900 1200)
+steps=(0 20 40 60 80 100 200 1000 1400 1600 1800 2000)
+# steps=(120 140 160 180 300 400 500 600 700 800 900 1200)
 
 types=(fpos cpos dep)
 num_labels=(38 17 54)
@@ -37,9 +38,9 @@ for layer in {0..12}; do
     dirhere=$EXPERIMENT_CONFIG_DIR/seed_0_step_${step}
     mkdir -p $dirhere
     if [[ "$layer" -eq 0 && "$type" == "fpos" ]]; then
-        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True
+        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True --resid $RESID
     else
-        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings False
+        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings False --resid $RESID
     fi
     cat << EOF > $dirhere/${type}_${layer}.yaml
 dataset:
@@ -47,6 +48,7 @@ dataset:
   task_name: "${type}"
 layer_idx: $layer
 model_name: "google/multiberts-seed_0-step_${step}k"
+resid: $RESID
 probe:
   finetune-model: "linear"
   epochs: 4

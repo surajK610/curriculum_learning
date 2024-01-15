@@ -175,6 +175,15 @@ def words_to_input_ids_and_last_token_index(tokenizer, words):
   
     return inputs, last_token_index_per_word, word_boundaries
 
+def generate_gaussian_inputs(m1, s1, m2, s2, m3, s3, m4, s4, N, N_p, N_pp):
+    f1 = torch.normal(mean=m1, std=s1)
+    f2 = torch.normal(mean=m2, std=s2)
+    f3 = torch.normal(mean=m3, std=s3)
+    f4 = torch.normal(mean=m4, std=s4)
+    full = torch.concat([f1, f2, f3, f4], dim=0)
+    label = (torch.mean(f3) > N_p) if (torch.mean(f1) > N) else (torch.mean(f4) > N_pp)
+    alt_label = (torch.mean(f3) > N_p) if (torch.mean(f2) > N) else (torch.mean(f4) > N_pp)
+    return full, label, alt_label
 
 def generate_activations(model, tokenizer, dataset, device, split='train', task='pos', ontonotes=False):
     ## NOTE: This function is outdated in that it uses the last token of each word as the word representation rather than a mean
@@ -269,6 +278,27 @@ def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, devic
     """
 
     model.eval()
+    if ~resid:
+        self_attention_outputs = []
+        mlp_outputs = []
+        embedding_outputs = []
+        def hook_embedding(module, input, output):
+            if isinstance(output, tuple):
+                output = output[0]
+            embedding_outputs.append(output)
+        def hook_self_attention(module, input, output):
+            if isinstance(output, tuple):
+                output = output[0]
+            self_attention_outputs.append(output)
+        def hook_mlp(module, input, output):
+            if isinstance(output, tuple):
+                output = output[0]
+            mlp_outputs.append(output)
+        model.embeddings.register_forward_hook(hook_embedding)
+        for layer in model.encoder.layer:
+            layer.attention.self.register_forward_hook(hook_self_attention)
+            layer.output.dense.register_forward_hook(hook_mlp)
+        
     with h5py.File(path, "w") as fout:
         for index, line in enumerate(tqdm(text, desc="[saving embeddings]")):
             line = line.strip()  # Remove trailing characters
@@ -284,7 +314,7 @@ def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, devic
             else:
               tokens_tensor = torch.tensor([indexed_tokens])
               segments_tensors = torch.tensor([segment_ids])
-              
+            
             with torch.no_grad():
                 encoded_layers = model(
                     tokens_tensor, segments_tensors, output_hidden_states=True
@@ -292,9 +322,14 @@ def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, devic
                 # embeddings + 12 layers
                 encoded_layers = encoded_layers[-1]
                 if ~resid:
-                    for i in range(1, len(encoded_layers)):
-                        encoded_layers[i] = encoded_layers[i] - encoded_layers[i-1]
-                        # only contribution that is not from previous layer
+                    combined_outputs = embedding_outputs + [sa + mlp for sa, mlp in zip(self_attention_outputs, mlp_outputs)]
+                    encoded_layers = combined_outputs.copy()
+                    
+                    self_attention_outputs.clear()
+                    mlp_outputs.clear()
+                    embedding_outputs.clear()
+                    # only use output of the layer (i.e. attention + mlp)
+                    
             dset = fout.create_dataset(
                 str(index), (LAYER_COUNT, len(tokenized_text), FEATURE_COUNT)
             )

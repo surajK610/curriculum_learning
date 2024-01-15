@@ -64,7 +64,7 @@ def find_directories(path):
 def find_files(path):
     return [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
   
-def collate_validation_accuracy(root_dir, dataset, model):
+def collate_validation_accuracy(root_dir, dataset, model, exp, resid):
   data = []
   dirs = find_directories(root_dir)
   if model == 'pythia':
@@ -73,25 +73,33 @@ def collate_validation_accuracy(root_dir, dataset, model):
     dirs = [d for d in dirs if 'multibert' in d]
   for subdir in dirs:
     step = subdir.split("_")[-1][:-1] 
-    if dataset == 'aheads':
+    if dataset == 'aheads' and model == 'pythia':
       step = subdir.split("_")[-1] # no k in back
     elif model == 'pythia':
       step = subdir.split("step")[-1]
     if set(find_directories(os.path.join(root_dir, subdir))) == set(layer_list):
       for layer in layer_list:
-        filename = find_files(os.path.join(root_dir, subdir, layer))[0]
-        file_path = os.path.join(root_dir, subdir, layer, filename)
-        if filename == 'val_acc.txt':
-          val_acc = parse_val_acc_epoch(file_path)
-          data.append({'Step': step, 'Layer': layer, 'Val Acc': val_acc})
-        elif filename == 'val_metrics_depth.txt':
+        filenames = find_files(os.path.join(root_dir, subdir, layer))
+        if exp == 'depth':
+          filename = 'val_metrics_depth.txt' if resid else 'val_metrics_depth_out.txt'
+          assert filename in filenames
+          file_path = os.path.join(root_dir, subdir, layer, filename)
           val_acc = parse_depth_acc(file_path)
           val_spr = parse_depth_spr(file_path)
           data.append({'Step': step, 'Layer': layer, 'Root Acc': val_acc, 'NSpr': val_spr})
-        elif filename == 'val_metrics_distance.txt':
+        elif exp == 'distance':
+          filename = 'val_metrics_distance.txt' if resid else 'val_metrics_distance_out.txt'
+          assert filename in filenames
+          file_path = os.path.join(root_dir, subdir, layer, filename)
           val_uuas = parse_dist_uuas(file_path)
           val_spr = parse_dist_spr(file_path)
           data.append({'Step': step, 'Layer': layer, 'UUAS': val_uuas, 'DSpr': val_spr})
+        else:
+          filename = 'val_acc.txt' if resid else 'val_acc_out.txt'
+          assert filename in filenames
+          file_path = os.path.join(root_dir, subdir, layer, filename)
+          val_acc = parse_val_acc_epoch(file_path)
+          data.append({'Step': step, 'Layer': layer, 'Val Acc': val_acc})
   return data
   
 def main(FLAGS):  
@@ -138,8 +146,9 @@ def main(FLAGS):
       plt.tight_layout()
       output_filename = os.path.join(home, "figures", f"{key}.png")
       plt.savefig(output_filename)
-  
-   
+      plt.close()
+      return 
+    
   if FLAGS.line_graph == 'True':
     fig = go.Figure()
     layer_order = []
@@ -186,23 +195,18 @@ def main(FLAGS):
     return 
   
   if FLAGS.path_to_df is None:
+    resid = FLAGS.resid == 'True'
     root_dir = os.path.join(home, "outputs", FLAGS.dataset, FLAGS.exp)
-    df = pd.DataFrame(collate_validation_accuracy(root_dir, FLAGS.dataset, FLAGS.model))
+    df = pd.DataFrame(collate_validation_accuracy(root_dir, FLAGS.dataset, FLAGS.model, FLAGS.exp, resid))
     df['Step'] = pd.to_numeric(df['Step'])
-    if FLAGS.dataset == 'aheads':
-      df['Layer'] = pd.to_numeric( df['Layer'])
-    else:
-      df['Layer'] = pd.to_numeric( df['Layer'].apply(lambda x: x.split("-")[1]))
+    df['Layer'] = pd.to_numeric( df['Layer'].apply(lambda x: x.split("-")[1]))
     df = df.pivot(columns='Step', index='Layer', values=FLAGS.metric)
     df.sort_index(axis=1, inplace=True)
     df.sort_index(axis=0, inplace=True, ascending=False)
     df.index= df.index.map(lambda x: layer_name_dict[f'layer-{x}'])
     
     if FLAGS.save == 'True':
-      if FLAGS.model == 'bert':
-        output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}.csv")
-      elif FLAGS.model == 'pythia':
-        output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_pythia.csv")
+      output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}{'_pythia' if FLAGS.model == 'pythia' else ''}{'' if resid else '_out'}.csv")
       df.to_csv(output_filename, index=True, header=True, sep='\t')
       
   else:
@@ -241,10 +245,8 @@ def main(FLAGS):
       xaxis_title='Step (In Thousands)',
       yaxis_title='Layer'
     ) 
-    if FLAGS.model == 'bert':
-        output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.json")
-    elif FLAGS.model == 'pythia':
-      output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap_pythia.json")
+
+    output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap{'_pythia' if FLAGS.model == 'pythia' else ''}{'' if resid else '_out'}.json")
     # output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.json")
     fig.write_json(output_filename)
     
@@ -262,10 +264,7 @@ def main(FLAGS):
         max_val_row = df.index.get_loc(df[col].idxmax())
         ax.add_patch(patches.Rectangle((col_idx, max_val_row), 1, 1, fill=False, edgecolor='white', lw=2))
     plt.tight_layout()
-    if FLAGS.model == 'bert':
-        output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.png")
-    elif FLAGS.model == 'pythia':
-      output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap_pythia.png")
+    output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap{'_pythia' if FLAGS.model == 'pythia' else ''}{'' if resid else '_out'}.png")
     # output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.png")
     plt.savefig(output_filename, dpi=300)
     plt.close()
@@ -282,5 +281,6 @@ if __name__ == "__main__":
   argparser.add_argument("--path-to-df", type=str, default=None)
   argparser.add_argument("--line-graph", type=str, default="False")
   argparser.add_argument("--gen-figure", type=str, default="False")
+  argparser.add_argument("--resid", type=str, default="True")
   FLAGS = argparser.parse_args()
   main(FLAGS)

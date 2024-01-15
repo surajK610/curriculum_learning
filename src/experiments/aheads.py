@@ -110,10 +110,32 @@ def create_repeats_dataset(num_samples=50, min_vector_size=5, max_vector_size=50
   return dataset
 
 def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector_size=10, max_vocab=30, 
-                                type : HeadName ="duplicate_token_head", device="cpu"):
+                                type : HeadName ="duplicate_token_head", device="cpu", resid=True):
     task_labels = []
     model.eval()
     model.config.output_hidden_states = True
+    if ~resid:
+      self_attention_outputs = []
+      mlp_outputs = []
+      embedding_outputs = []
+      def hook_embedding(module, input, output):
+          if isinstance(output, tuple):
+              output = output[0]
+          embedding_outputs.append(output)
+      def hook_self_attention(module, input, output):
+          if isinstance(output, tuple):
+              output = output[0]
+          self_attention_outputs.append(output)
+      def hook_mlp(module, input, output):
+          if isinstance(output, tuple):
+              output = output[0]
+          mlp_outputs.append(output)
+          
+      model.embeddings.register_forward_hook(hook_embedding)
+      for layer in model.encoder.layer:
+          layer.attention.self.register_forward_hook(hook_self_attention)
+          layer.output.dense.register_forward_hook(hook_mlp)
+        
     relevant_activations = defaultdict(list)    
     for _ in tqdm(range(num_samples), desc=f'Generating activations for {type} dataset'):
         vector_size = torch.randint(min_vector_size, max_vector_size, (1,)).item()
@@ -121,6 +143,7 @@ def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector
         ## adds the CLS + SEP tokens
         if type == "duplicate_token_head":
           if random.random() < 0.5:
+            tokens = torch.randperm(max_vocab)[:vector_size].view(1, -1) # sample without replacement
             tokens = tokens.repeat((1, 2)) # repeat twice
             idx = torch.randint(0, vector_size*2, (1,))
             label = torch.tensor([[1]])
@@ -130,9 +153,10 @@ def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector
         elif type == "induction_head":
           mask_idx = torch.randint(1, vector_size, (1,)).item() # mask token
           tokens = tokens.repeat((1, 2)) # repeat twice
-          tokens[:, vector_size + mask_idx] = 102 # replace second instance with MASK
+          tokens[:, vector_size + mask_idx] = 103 # replace second instance with MASK
           label = tokens[:, mask_idx] # label is the token that is masked
-          idx = torch.tensor([vector_size + mask_idx - 1]) # index of the token before the mask
+          # idx = torch.tensor([vector_size + mask_idx - 1]) # index of the token before the mask
+          idx = torch.tensor([vector_size + mask_idx]) # index of the mask
         elif type == "previous_token_head":
           idx = torch.randint(1, vector_size, (1,)) # idx
           label = tokens[:, idx.item() - 1] # first token has no previous token
@@ -145,6 +169,13 @@ def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector
         with torch.no_grad():
           output = model(tokens.to(device))
           cache = output.hidden_states
+          if ~resid:
+            combined_outputs = embedding_outputs + [sa + mlp for sa, mlp in zip(self_attention_outputs, mlp_outputs)]
+            cache = combined_outputs.copy()
+            
+            self_attention_outputs.clear()
+            mlp_outputs.clear()
+            embedding_outputs.clear()
           for i, val in enumerate(cache):
             relevant_activations[i].append(val.squeeze(0)[idx, :])
     task_labels = torch.concat(task_labels, dim=0).unsqueeze(0).to(device)
@@ -227,7 +258,7 @@ def main(FLAGS):
       
       layer_str = "layer-" + str(i)
       os.makedirs(os.path.join(output_dir, detection_pattern, save_model_name, layer_str), exist_ok=True)
-      with open(os.path.join(output_dir, detection_pattern, save_model_name, layer_str, "val_acc.txt"), "w") as f:
+      with open(os.path.join(output_dir, detection_pattern, save_model_name, layer_str, f"val_acc.txt"), "w") as f:
         f.write(str(val_logs))
       print(val_logs)
 
@@ -279,6 +310,7 @@ if __name__ == "__main__":
   parser.add_argument("--finetune-model", default="linear", type=str, help="finetune model")
   parser.add_argument("--batch-size", default=32, type=int, help="batch size")
   parser.add_argument("--epochs", default=1, type=int, help="epochs")
+  parser.add_argument("--resid", default="True", type=str, help="residuals") 
   
   parser.add_argument("--checkpoint", default=143000, type=int, help="checkpoint")
   parser.add_argument("--detection-pattern", default="previous_token_head", type=str, help="detection pattern")

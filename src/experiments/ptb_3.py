@@ -34,6 +34,7 @@ def main(config):
     
     layer_idx = config["layer_idx"]
     model_name = config["model_name"].split('/')[-1]
+    resid = config["resid"]
     if "pythia" in model_name:
         model_name += "-step" + str(config["model_step"])
     
@@ -89,10 +90,15 @@ def main(config):
         test_distance_dspr, test_distance_dspr_list = reportDistanceSpearmanr(
             dev_prediction_batches, dev_data_loader
         )
-        with open(os.path.join(output_dir, model_name, layer_name, "val_metrics_distance.txt"), "w") as f:
-            f.write(f"Avg UUAS: {test_uuas:.4f}\n")
-            f.write(f"Avg Distance DSpr.: {test_distance_dspr:.4f}\n")
-        
+        if resid:
+            with open(os.path.join(output_dir, model_name, layer_name, "val_metrics_distance.txt"), "w") as f:
+                f.write(f"Avg UUAS: {test_uuas:.4f}\n")
+                f.write(f"Avg Distance DSpr.: {test_distance_dspr:.4f}\n")
+        else:
+            with open(os.path.join(output_dir, model_name, layer_name, "val_metrics_distance_out.txt"), "w") as f:
+                f.write(f"Avg UUAS: {test_uuas:.4f}\n")
+                f.write(f"Avg Distance DSpr.: {test_distance_dspr:.4f}\n")
+                
     elif config["experiment"] == "depth":
         probe = L1DepthProbe(input_size, rep_dim, finetune_model).to(device)
         trainer = Trainer(max_epochs=num_epochs)
@@ -104,9 +110,14 @@ def main(config):
         test_depth_dspr, test_depth_dspr_list = reportDepthSpearmanr(
             dev_prediction_batches, dev_data_loader
         )
-        with open(os.path.join(output_dir, model_name, layer_name, "val_metrics_depth.txt"), "w") as f:
-            f.write(f"Avg Acc: {test_acc:.4f}\n")
-            f.write(f"Avg Depth DSpr.: {test_depth_dspr:.4f}\n")
+        if resid:
+            with open(os.path.join(output_dir, model_name, layer_name, "val_metrics_depth.txt"), "w") as f:
+                f.write(f"Avg Acc: {test_acc:.4f}\n")
+                f.write(f"Avg Depth DSpr.: {test_depth_dspr:.4f}\n")
+        else:
+            with open(os.path.join(output_dir, model_name, layer_name, "val_metrics_depth_out.txt"), "w") as f:
+                f.write(f"Avg Acc: {test_acc:.4f}\n")
+                f.write(f"Avg Depth DSpr.: {test_depth_dspr:.4f}\n")
         
     else:
         raise ValueError("Invalid experiment type", config["experiment"])
