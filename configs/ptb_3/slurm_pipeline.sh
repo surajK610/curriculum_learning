@@ -5,7 +5,7 @@
 #SBATCH --array=0-23%24
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
-#SBATCH -p gpu --gres=gpu:1
+#SBATCH -p 3090-gcondo --gres=gpu:1
 #SBATCH --cpus-per-task=1
 
 DATE=$(date +%m-%d)
@@ -19,8 +19,8 @@ export DATASET=ptb_3
 # module load python cuda
 source $LEARNING_DYNAMICS_HOME/venv/bin/activate
 
-# steps=(0 20 40 60 80 100 200 1000 1400 1600 1800 2000)
-steps=(120 140 160 180 300 400 500 600 700 800 900 1200)
+steps=(0 20 40 60 80 100 200 1000 1400 1600 1800 2000)
+# steps=(120 140 160 180 300 400 500 600 700 800 900 1200)
 types=(depth distance)
 
 step_index=$((SLURM_ARRAY_TASK_ID % 12))

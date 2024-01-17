@@ -130,7 +130,7 @@ def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector
           if isinstance(output, tuple):
               output = output[0]
           mlp_outputs.append(output)
-          
+       
       model.embeddings.register_forward_hook(hook_embedding)
       for layer in model.encoder.layer:
           layer.attention.self.register_forward_hook(hook_self_attention)
@@ -221,6 +221,7 @@ def main(FLAGS):
     print("Probing Residuals", FLAGS.detection_pattern, FLAGS.checkpoint)
     torch.manual_seed(0)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    resid = FLAGS.resid == "True"
     # dict_df_heads = {detection_pattern: pd.DataFrame(columns=PYTHIA_CHECKPOINTS_OLD, index=range(N_LAYERS+1)) for detection_pattern in HEAD_NAMES}
     
     output_dir = "outputs/aheads"
@@ -233,7 +234,7 @@ def main(FLAGS):
     save_model_name = f"google/multiberts-seed_0-step_{checkpoint}k".split("/")[-1]
     # for detection_pattern in HEAD_NAMES:
     detection_pattern = FLAGS.detection_pattern
-    relevant_activations, task_labels = generate_algo_task_dataset(model, num_samples=40000, min_vector_size=3, max_vector_size=10, max_vocab=FLAGS.max_vocab, type=detection_pattern, device=device)
+    relevant_activations, task_labels = generate_algo_task_dataset(model, num_samples=40000, min_vector_size=3, max_vector_size=10, max_vocab=FLAGS.max_vocab, type=detection_pattern, device=device, resid=resid)
     
     num_labels = task_labels.max() + 1
     
@@ -258,7 +259,7 @@ def main(FLAGS):
       
       layer_str = "layer-" + str(i)
       os.makedirs(os.path.join(output_dir, detection_pattern, save_model_name, layer_str), exist_ok=True)
-      with open(os.path.join(output_dir, detection_pattern, save_model_name, layer_str, f"val_acc.txt"), "w") as f:
+      with open(os.path.join(output_dir, detection_pattern, save_model_name, layer_str, f"val_acc{'' if resid else '_out'}.txt"), "w") as f:
         f.write(str(val_logs))
       print(val_logs)
 

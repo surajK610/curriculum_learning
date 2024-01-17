@@ -96,6 +96,8 @@ def collate_validation_accuracy(root_dir, dataset, model, exp, resid):
           data.append({'Step': step, 'Layer': layer, 'UUAS': val_uuas, 'DSpr': val_spr})
         else:
           filename = 'val_acc.txt' if resid else 'val_acc_out.txt'
+          if filename not in filenames:
+            continue
           assert filename in filenames
           file_path = os.path.join(root_dir, subdir, layer, filename)
           val_acc = parse_val_acc_epoch(file_path)
