@@ -2,10 +2,10 @@
 #SBATCH --job-name=en_ewt-ud
 #SBATCH --output=outputs/en_ewt-ud/slurm_out/log_%a.out
 #SBATCH --error=outputs/en_ewt-ud/slurm_out/log_%a.err
-#SBATCH --array=0-35%36
+#SBATCH --array=11-11%36
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
-#SBATCH -p gpu --gres=gpu:1
+#SBATCH -p 3090-gcondo --gres=gpu:1
 #SBATCH --cpus-per-task=1
 
 DATE=$(date +%m-%d)

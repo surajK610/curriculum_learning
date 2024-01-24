@@ -142,10 +142,11 @@ def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector
         tokens = torch.randint(0, max_vocab, (1, vector_size))
         ## adds the CLS + SEP tokens
         if type == "duplicate_token_head":
+          tokens = torch.randperm(max_vocab)[:vector_size].view(1, -1) # sample without replacement
           if random.random() < 0.5:
-            tokens = torch.randperm(max_vocab)[:vector_size].view(1, -1) # sample without replacement
-            tokens = tokens.repeat((1, 2)) # repeat twice
-            idx = torch.randint(0, vector_size*2, (1,))
+            idxs = torch.randperm(vector_size)[:2] # sample 2 indices
+            tokens[:, idxs[0]] = tokens[:, idxs[1]] # duplicate
+            idx = torch.tensor(idxs[0])
             label = torch.tensor([[1]])
           else:
             idx = torch.randint(0, vector_size, (1,)) 
@@ -234,7 +235,7 @@ def main(FLAGS):
     save_model_name = f"google/multiberts-seed_0-step_{checkpoint}k".split("/")[-1]
     # for detection_pattern in HEAD_NAMES:
     detection_pattern = FLAGS.detection_pattern
-    relevant_activations, task_labels = generate_algo_task_dataset(model, num_samples=40000, min_vector_size=3, max_vector_size=10, max_vocab=FLAGS.max_vocab, type=detection_pattern, device=device, resid=resid)
+    relevant_activations, task_labels = generate_algo_task_dataset(model, num_samples=40000, min_vector_size=8, max_vector_size=10, max_vocab=FLAGS.max_vocab, type=detection_pattern, device=device, resid=resid)
     
     num_labels = task_labels.max() + 1
     

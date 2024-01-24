@@ -5,6 +5,7 @@ sys.path.append("..")
 import os
 from collections import namedtuple, defaultdict
 
+from typing import Optional, Dict
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
@@ -16,6 +17,8 @@ from tqdm import tqdm
 from itertools import chain
 
 import glob
+
+AttnHead = namedtuple("AttnHead", "layer head")
 
 def dataStat(data):
     """
@@ -270,6 +273,84 @@ def embedPythiaObservation(hdf5_path, observations, tokenizer, observation_class
 
     return embedded_observations
 
+
+def makeHooks(model, cache : Optional[defaultdict], mlp=True, attn=True, embeddings=True, remove_batch_dim=False, device='cpu'):
+    
+    def hook_embedding(module, input, output):
+        if isinstance(output, tuple):
+            output = output[0]
+        if remove_batch_dim:
+            cache['embedding'].append(output[0].detach().to(device))
+        else:
+            cache['embedding'].append(output.detach().to(device))
+        
+    def hook_self_attention(module, input, output):
+        if isinstance(output, tuple):
+            output = output[0]
+        if remove_batch_dim:
+            cache['attention'].append(output[0].detach().to(device))
+        else:
+            cache['attention'].append(output.detach().to(device))
+        
+    def hook_mlp(module, input, output):
+        if isinstance(output, tuple):
+            output = output[0]
+        if remove_batch_dim:
+            cache['mlp'].append(output[0].detach().to(device))
+        else:
+            cache['mlp'].append(output.detach().to(device))
+    
+    if mlp:
+        for layer in model.encoder.layer:
+            layer.output.dense.register_forward_hook(hook_mlp)
+    if attn:
+        for layer in model.encoder.layer:
+            layer.attention.self.register_forward_hook(hook_self_attention)
+    if embeddings:
+        model.embeddings.register_forward_hook(hook_embedding)
+    return cache
+
+def decomposeHeads(model, attention_vectors):
+    """
+    Decompose attention heads into subspaces.
+    `(cache['attention'][0] @ model.encoder.layer[0].attention.output.dense.weight.data.T) + model.encoder.layer[0].attention.output.dense.bias`
+    """
+    attention_head_dict = {}
+    assert len(attention_vectors) == 12
+    for i, attn_layer in enumerate(tqdm(attention_vectors, desc='Decomposing attention heads')):
+        output_matrix = model.encoder.layer[i].attention.output.dense.weight.data.T
+        for j in range(model.config.num_attention_heads):
+            output_slice = output_matrix[j*64:(j+1)*64, :]
+            if len(attn_layer.shape) == 2:
+                attn_slice = attn_layer[:, j*64:(j+1)*64]
+            elif len(attn_layer.shape) == 3:
+                attn_slice = attn_layer[:, :, j*64:(j+1)*64] 
+                ## if batch dim intact
+            else:
+                raise ValueError('Attention layer has unexpected shape')
+            
+            attention_head_dict[AttnHead(i, j)] =  attn_slice @ output_slice
+    return attention_head_dict
+
+def decomposeSingleHead(model, attention_vector, layer, head):
+    """
+    Decompose attention heads into subspaces.
+    layer is 1-indexed so use layer-1
+    `(cache['attention'][0] @ model.encoder.layer[0].attention.output.dense.weight.data.T) + model.encoder.layer[0].attention.output.dense.bias`
+    """
+    attention_head_dict = {}
+    output_matrix = model.encoder.layer[layer-1].attention.output.dense.weight.data.T
+    output_slice = output_matrix[head*64:(head+1)*64, :]
+    if len(attention_vector.shape) == 2:
+        attn_slice = attention_vector[:, head*64:(head+1)*64]
+    elif len(attention_vector.shape) == 3:
+        attn_slice = attention_vector[:, :, head*64:(head+1)*64] 
+        ## if batch dim intact
+    else:
+        raise ValueError('Attention layer has unexpected shape')
+    return attn_slice @ output_slice
+        
+    
 def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device, resid=True):
     """
     Takes raw text and saves BERT-cased features for that text to disk
@@ -279,25 +360,8 @@ def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, devic
 
     model.eval()
     if ~resid:
-        self_attention_outputs = []
-        mlp_outputs = []
-        embedding_outputs = []
-        def hook_embedding(module, input, output):
-            if isinstance(output, tuple):
-                output = output[0]
-            embedding_outputs.append(output)
-        def hook_self_attention(module, input, output):
-            if isinstance(output, tuple):
-                output = output[0]
-            self_attention_outputs.append(output)
-        def hook_mlp(module, input, output):
-            if isinstance(output, tuple):
-                output = output[0]
-            mlp_outputs.append(output)
-        model.embeddings.register_forward_hook(hook_embedding)
-        for layer in model.encoder.layer:
-            layer.attention.self.register_forward_hook(hook_self_attention)
-            layer.output.dense.register_forward_hook(hook_mlp)
+        cache = defaultdict(list)
+        cache = makeHooks(model, cache, mlp=True, attn=True, embeddings=True, remove_batch_dim=False, device=device)
         
     with h5py.File(path, "w") as fout:
         for index, line in enumerate(tqdm(text, desc="[saving embeddings]")):
@@ -322,21 +386,27 @@ def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, devic
                 # embeddings + 12 layers
                 encoded_layers = encoded_layers[-1]
                 if ~resid:
-                    combined_outputs = embedding_outputs + [sa + mlp for sa, mlp in zip(self_attention_outputs, mlp_outputs)]
-                    encoded_layers = combined_outputs.copy()
+                    attn_outputs = cache['attention'].copy()
+                    mlp_outputs = cache['mlp'].copy()
+                    embedding_outputs = cache['embedding'].copy()
                     
-                    self_attention_outputs.clear()
-                    mlp_outputs.clear()
-                    embedding_outputs.clear()
+                    cache['attention'].clear()
+                    cache['mlp'].clear()
+                    cache['embedding'].clear()
                     # only use output of the layer (i.e. attention + mlp)
-                    
-            dset = fout.create_dataset(
-                str(index), (LAYER_COUNT, len(tokenized_text), FEATURE_COUNT)
-            )
-            dset[:, :, :] = np.vstack([x.cpu().numpy() for x in encoded_layers])
+            if ~resid:
+                dset = fout.create_dataset(
+                    str(index), (LAYER_COUNT + (LAYER_COUNT - 1), len(tokenized_text), FEATURE_COUNT)
+                ) ## 1 for embedding, 12 for attention, 12 for mlp
+                dset[:, :, :] = np.vstack([embedding_outputs[0].cpu().numpy()] + [mlp_outputs[i].cpu().numpy() for i in range(LAYER_COUNT-1)] + [attn_outputs[i].cpu().numpy() for i in range(LAYER_COUNT-1)])
+            else:
+                dset = fout.create_dataset(
+                    str(index), (LAYER_COUNT, len(tokenized_text), FEATURE_COUNT)
+                )
+                dset[:, :, :] = np.vstack([x.cpu().numpy() for x in encoded_layers])
 
 def embedBertObservation(
-    hdf5_path, observations, tokenizer, observation_class, layer_index
+    model, hdf5_path, observations, tokenizer, observation_class, layer_index, attention_head=None
 ):
     """
     Adds pre-computed BERT embeddings from disk to Observations.
@@ -359,7 +429,7 @@ def embedBertObservation(
         layer_index: The index corresponding to the layer of representation
             to be used. (e.g., 0 for BERT embeddings, 1, ..., 12 for BERT 
             layer 1, ..., 12)
-
+        attention_head: (optional) The index corresponding to the attention head 1, ..., 12
     Returns:
         A list of Observations with pre-computed embedding fields.
         
@@ -376,6 +446,12 @@ def embedBertObservation(
     for index in tqdm(sorted([int(x) for x in indices]), desc="[aligning embeddings]"):
         observation = observations[index]
         feature_stack = hf[str(index)]
+        if attention_head is None:
+            single_layer_features = feature_stack[layer_index]
+        else:
+            single_layer_features = feature_stack[13 + layer_index] ## attention_head is 1-indexed
+            single_layer_features = decomposeSingleHead(model, single_layer_features, layer_index, attention_head)
+            
         single_layer_features = feature_stack[layer_index]
         tokenized_sent = tokenizer.wordpiece_tokenizer.tokenize(
             "[CLS] " + " ".join(observation.sentence) + " [SEP]"

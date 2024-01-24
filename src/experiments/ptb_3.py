@@ -33,6 +33,9 @@ def main(config):
     dataset_dir = dataset_config["dir"]
     
     layer_idx = config["layer_idx"]
+    attention_head = config["attention_head"]
+    # if layer_idx > 12:
+    #   layer_idx = int(np.ceil((layer_idx - 12)/12))
     model_name = config["model_name"].split('/')[-1]
     resid = config["resid"]
     if "pythia" in model_name:
@@ -52,13 +55,13 @@ def main(config):
         home,
         dataset_dir,
         model_name,
-        "train-layer-" + str(layer_idx) + ".pt",
+        f"train-layer-{layer_idx}{'-'+str(attention_head) if attention_head is not None else ''}.pt",
     )
     dev_dataset_path = os.path.join(
         home,
         dataset_dir,
         model_name,
-        "dev-layer-" + str(layer_idx) + ".pt",
+        f"dev-layer-{layer_idx}{'-'+str(attention_head) if attention_head is not None else ''}.pt",
     )
 
     train_dataset = torch.load(train_dataset_path, pickle_module=dill)
@@ -95,7 +98,7 @@ def main(config):
                 f.write(f"Avg UUAS: {test_uuas:.4f}\n")
                 f.write(f"Avg Distance DSpr.: {test_distance_dspr:.4f}\n")
         else:
-            with open(os.path.join(output_dir, model_name, layer_name, "val_metrics_distance_out.txt"), "w") as f:
+            with open(os.path.join(output_dir, model_name, {layer_name}, f"val_metrics_distance_out{'_head_' + str(attention_head) if attention_head is not None else ''}.txt"), "w") as f:
                 f.write(f"Avg UUAS: {test_uuas:.4f}\n")
                 f.write(f"Avg Distance DSpr.: {test_distance_dspr:.4f}\n")
                 

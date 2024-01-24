@@ -26,6 +26,10 @@ def main(config):
   task_name = dataset_config["task_name"]
   
   layer_idx = config["layer_idx"]
+  attention_head = config["attention_head"]
+  # if layer_idx > 12:
+  #   layer_idx = int(np.ceil((layer_idx - 12)/12))
+  
   resid = config["resid"]
   model_name = config["model_name"].split('/')[-1]
   if "pythia" in model_name:
@@ -46,13 +50,13 @@ def main(config):
     home,
     dataset_dir,
     model_name,
-    "train-layer-" + str(layer_idx) + ".pt",
+    f"train-layer-{layer_idx}{'-'+str(attention_head) if attention_head is not None else ''}.pt",
   )
   dev_dataset_path = os.path.join(
     home,
     dataset_dir,
     model_name,
-    "dev-layer-" + str(layer_idx) + ".pt",
+    f"dev-layer-{layer_idx}{'-'+str(attention_head) if attention_head is not None else ''}.pt",
   )
 
   train_dataset = torch.load(train_dataset_path, pickle_module=dill)
@@ -83,7 +87,7 @@ def main(config):
     with open(os.path.join(output_dir, model_name, layer_str, "val_acc.txt"), "w") as f:
       f.write(str(val_logs))
   else:
-    with open(os.path.join(output_dir, model_name, layer_str, "val_acc_out.txt"), "w") as f:
+    with open(os.path.join(output_dir, model_name, layer_str, f"val_acc_out{'_head_' + str(attention_head) if attention_head is not None else ''}.txt"), "w") as f:
       f.write(str(val_logs))
 
 if __name__ == "__main__":

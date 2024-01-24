@@ -97,6 +97,7 @@ def collate_validation_accuracy(root_dir, dataset, model, exp, resid):
         else:
           filename = 'val_acc.txt' if resid else 'val_acc_out.txt'
           if filename not in filenames:
+            print(f"File {filename} not found in {os.path.join(root_dir, subdir, layer)}")
             continue
           assert filename in filenames
           file_path = os.path.join(root_dir, subdir, layer, filename)
@@ -106,6 +107,7 @@ def collate_validation_accuracy(root_dir, dataset, model, exp, resid):
   
 def main(FLAGS):  
   home = os.environ['LEARNING_DYNAMICS_HOME']
+  resid = FLAGS.resid == 'True'
   if FLAGS.gen_figure == 'True':
     file_paths = {
       'semantic':
@@ -115,26 +117,34 @@ def main(FLAGS):
       'syntax':
         ['outputs/ontonotes/phrase_start/Val_Acc.csv',
         'outputs/ontonotes/phrase_end/Val_Acc.csv',
-        'outputs/en_ewt-ud/dep/Val_Acc.csv',
-        'outputs/ptb_3/depth/Root_Acc.csv',
-        'outputs/ptb_3/distance/UUAS.csv'],
+        # 'outputs/en_ewt-ud/dep/Val_Acc.csv'
+        # 'outputs/ptb_3/depth/Root_Acc.csv',
+        # 'outputs/ptb_3/distance/UUAS.csv'
+        ],
       'algorithmic':
         ['outputs/aheads/duplicate_token_head/Val_Acc.csv', 
          'outputs/aheads/induction_head/Val_Acc.csv',
          'outputs/aheads/previous_token_head/Val_Acc.csv']
     }
-    for key, file_paths in file_paths.items():
-      n = len(file_paths)
-      titles = [s.split("/")[2] for s in file_paths]
+    if ~resid:
+      file_paths = {k: [s.replace('.', '_out.') for s in v] for k, v in file_paths.items()}
+      print(file_paths.keys())
+    
+    for key, fps in file_paths.items():
+      print(key)
+      n = len(fps)
+      titles = [s.split("/")[2] for s in fps]
       if key == 'algorithmic':
         titles = ['dup', 'ind', 'prev']
       elif key == 'syntax':
         titles = ['phrase start', 'phrase end', 'dep', 'depth', 'dist']
-      dataframes = [pd.read_csv(file_path, delimiter='\t').drop('Layer', axis=1) for file_path in file_paths]
+      dataframes = [pd.read_csv(file_path, delimiter='\t').drop('Layer', axis=1) for file_path in fps]
       fig, axs = plt.subplots(1, n, figsize=(5*n, 5), sharey=True)
 
       for i, (ax, df, title) in enumerate(zip(axs, dataframes, titles)):
           df.index = df.index[::-1]
+          if ~resid:
+            df = df[['0', '20', '40', '60', '80', '100', '200', '1000', '1400', '1600', '1800', '2000']]
           sns.heatmap(df, ax=ax, annot_kws={"size":16})
           cbar = ax.collections[0].colorbar
           cbar.ax.tick_params(labelsize=13)
@@ -146,10 +156,10 @@ def main(FLAGS):
           ax.tick_params(axis='both', which='major', labelsize=16)
       
       plt.tight_layout()
-      output_filename = os.path.join(home, "figures", f"{key}.png")
+      output_filename = os.path.join(home, "figures", f"{key}{'' if resid else '_out'}.png")
       plt.savefig(output_filename)
       plt.close()
-      return 
+    return 
     
   if FLAGS.line_graph == 'True':
     fig = go.Figure()

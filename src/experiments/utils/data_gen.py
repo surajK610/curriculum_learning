@@ -57,6 +57,9 @@ def main(args):
         test_hdf5_path = os.path.join(data_path, "embeddings", save_model_name, "raw.out.test.layers.hdf5")
         
     layer_index = args.layer_index #7
+    attention_head = None
+    if args.attention_head is not None:
+        attention_head = int(args.attention_head)
     task_name = args.task_name #"distance"
     
     device = th.device("cuda:0" if th.cuda.is_available() else "cpu")
@@ -160,13 +163,13 @@ def main(args):
 
     if "bert" in model_name:
         train_observations = embedBertObservation(
-            train_hdf5_path, train_observations, tokenizer, observation_class, layer_index
+            model, train_hdf5_path, train_observations, tokenizer, observation_class, layer_index, attention_head
         )
         dev_observations = embedBertObservation(
-            dev_hdf5_path, dev_observations, tokenizer, observation_class, layer_index
+            model, dev_hdf5_path, dev_observations, tokenizer, observation_class, layer_index, attention_head
         )
         test_observations = embedBertObservation(
-            test_hdf5_path, test_observations, tokenizer, observation_class, layer_index
+            model, test_hdf5_path, test_observations, tokenizer, observation_class, layer_index, attention_head
         )
     elif "pythia" in model_name:
         train_observations = embedPythiaObservation(
@@ -218,5 +221,6 @@ if __name__ == "__main__":
     argp.add_argument("--dataset", default="ptb", type=str)
     argp.add_argument("--compute-embeddings", default="False", type=str)
     argp.add_argument("--resid", default="True", type=str)
+    argp.add_argument("--attention-head", default=None, type=str)
     args = argp.parse_args()
     main(args)
