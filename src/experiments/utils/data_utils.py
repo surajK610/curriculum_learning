@@ -336,7 +336,6 @@ def decomposeSingleHead(model, attention_vector, layer, head):
     """
     Decompose attention heads into subspaces.
     layer is 1-indexed so use layer-1
-    `(cache['attention'][0] @ model.encoder.layer[0].attention.output.dense.weight.data.T) + model.encoder.layer[0].attention.output.dense.bias`
     """
     attention_head_dict = {}
     output_matrix = model.encoder.layer[layer-1].attention.output.dense.weight.data.T
@@ -348,7 +347,7 @@ def decomposeSingleHead(model, attention_vector, layer, head):
         ## if batch dim intact
     else:
         raise ValueError('Attention layer has unexpected shape')
-    return attn_slice @ output_slice
+    return attn_slice @ output_slice.cpu().numpy()
         
     
 def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, device, resid=True):
@@ -449,7 +448,7 @@ def embedBertObservation(
         if attention_head is None:
             single_layer_features = feature_stack[layer_index]
         else:
-            single_layer_features = feature_stack[13 + layer_index] ## attention_head is 1-indexed
+            single_layer_features = feature_stack[12 + layer_index] ## layer is 1-indexed
             single_layer_features = decomposeSingleHead(model, single_layer_features, layer_index, attention_head)
             
         single_layer_features = feature_stack[layer_index]

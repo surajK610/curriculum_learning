@@ -70,19 +70,19 @@ def main(args):
         "dataset/",
         task_name,
         save_model_name,
-        "train-layer-" + str(layer_index) + ".pt",
+       f"train-layer-{layer_index}{'-'+str(attention_head) if attention_head is not None else ''}.pt",
     )
     dev_dataset_path = os.path.join(data_path,
         "dataset/",
         task_name,
         save_model_name,
-        "dev-layer-" + str(layer_index) + ".pt",
+        f"dev-layer-{layer_index}{'-'+str(attention_head) if attention_head is not None else ''}.pt",
     )
     test_dataset_path = os.path.join(data_path,
         "dataset/",
         task_name,
         save_model_name,
-        "test-layer-" + str(layer_index) + ".pt",
+        f"test-layer-{layer_index}{'-'+str(attention_head) if attention_head is not None else ''}.pt",
     )
 
     if args.dataset == "ontonotes":
