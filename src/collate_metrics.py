@@ -151,6 +151,7 @@ def main(FLAGS):
           df.index = df.index[::-1]
           if ~resid:
             df = df[['0', '20', '40', '60', '80', '100', '200', '1000', '1400', '1600', '1800', '2000']]
+            # just for now to ensure consistency of step samples
           sns.heatmap(df, ax=ax, annot_kws={"size":16})
           cbar = ax.collections[0].colorbar
           cbar.ax.tick_params(labelsize=13)
@@ -222,7 +223,7 @@ def main(FLAGS):
     df.sort_index(axis=0, inplace=True, ascending=False)
     df.index= df.index.map(lambda x: layer_name_dict[f'layer-{x}'])
     if ~resid:
-        df = df[[0, 20, 40, 60, 80, 100, 200, 1000, 1400, 1600, 1800, 2000]]
+        df = df[[0, 20, 40, 60, 80, 100, 200, 1000, 1400, 1600, 1800, 2000]] # just for now to ensure consistency of step samples
     if FLAGS.save == 'True':
       if resid:
         output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}{'' if resid else '_out'}.csv")
