@@ -63,8 +63,8 @@ def find_directories(path):
 
 def find_files(path):
     return [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
-  
-def collate_validation_accuracy(root_dir, dataset, model, exp, resid):
+
+def collate_validation_accuracy(root_dir, dataset, model, exp, resid, attention_head=None):
   data = []
   dirs = find_directories(root_dir)
   if model == 'pythia':
@@ -81,21 +81,27 @@ def collate_validation_accuracy(root_dir, dataset, model, exp, resid):
       for layer in layer_list:
         filenames = find_files(os.path.join(root_dir, subdir, layer))
         if exp == 'depth':
-          filename = 'val_metrics_depth.txt' if resid else 'val_metrics_depth_out.txt'
+          filename = 'val_metrics_depth.txt' if resid else f'val_metrics_depth_out{"_head_"+str(attention_head) if attention_head is not None else ""}.txt'
+          if filename not in filenames:
+            print(f"File {filename} not found in {os.path.join(root_dir, subdir, layer)}")
+            continue
           assert filename in filenames
           file_path = os.path.join(root_dir, subdir, layer, filename)
           val_acc = parse_depth_acc(file_path)
           val_spr = parse_depth_spr(file_path)
           data.append({'Step': step, 'Layer': layer, 'Root Acc': val_acc, 'NSpr': val_spr})
         elif exp == 'distance':
-          filename = 'val_metrics_distance.txt' if resid else 'val_metrics_distance_out.txt'
+          filename = 'val_metrics_distance.txt' if resid else f'val_metrics_distance_out{"_head_"+str(attention_head) if attention_head is not None else ""}.txt'
+          if filename not in filenames:
+            print(f"File {filename} not found in {os.path.join(root_dir, subdir, layer)}")
+            continue
           assert filename in filenames
           file_path = os.path.join(root_dir, subdir, layer, filename)
           val_uuas = parse_dist_uuas(file_path)
           val_spr = parse_dist_spr(file_path)
           data.append({'Step': step, 'Layer': layer, 'UUAS': val_uuas, 'DSpr': val_spr})
         else:
-          filename = 'val_acc.txt' if resid else 'val_acc_out.txt'
+          filename = 'val_acc.txt' if resid else f'val_acc_out{"_head_"+str(attention_head) if attention_head is not None else ""}.txt'
           if filename not in filenames:
             print(f"File {filename} not found in {os.path.join(root_dir, subdir, layer)}")
             continue
@@ -200,7 +206,6 @@ def main(FLAGS):
           categoryarray=layer_order
       )
     )
-
     root_dir = os.path.join(home, "outputs")
     output_filename = os.path.join(root_dir, "line-graph.json")
     fig.write_json(output_filename)
@@ -209,18 +214,22 @@ def main(FLAGS):
   if FLAGS.path_to_df is None:
     resid = FLAGS.resid == 'True'
     root_dir = os.path.join(home, "outputs", FLAGS.dataset, FLAGS.exp)
-    df = pd.DataFrame(collate_validation_accuracy(root_dir, FLAGS.dataset, FLAGS.model, FLAGS.exp, resid))
+    df = pd.DataFrame(collate_validation_accuracy(root_dir, FLAGS.dataset, FLAGS.model, FLAGS.exp, resid, FLAGS.attention_head))
     df['Step'] = pd.to_numeric(df['Step'])
     df['Layer'] = pd.to_numeric( df['Layer'].apply(lambda x: x.split("-")[1]))
     df = df.pivot(columns='Step', index='Layer', values=FLAGS.metric)
     df.sort_index(axis=1, inplace=True)
     df.sort_index(axis=0, inplace=True, ascending=False)
     df.index= df.index.map(lambda x: layer_name_dict[f'layer-{x}'])
-    
+    if ~resid:
+        df = df[[0, 20, 40, 60, 80, 100, 200, 1000, 1400, 1600, 1800, 2000]]
     if FLAGS.save == 'True':
-      output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}{'_pythia' if FLAGS.model == 'pythia' else ''}{'' if resid else '_out'}.csv")
+      if resid:
+        output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}{'' if resid else '_out'}.csv")
+      else:
+        os.makedirs(os.path.join(root_dir, "components"), exist_ok=True)
+        output_filename = os.path.join(root_dir, "components", f"{FLAGS.metric.replace(' ', '_')}_heatmap{'' if resid else '_out'}{'_head_'+str(FLAGS.attention_head) if FLAGS.attention_head is not None else ''}.csv")
       df.to_csv(output_filename, index=True, header=True, sep='\t')
-      
   else:
     path_to_df = os.path.join(home, "outputs", FLAGS.path_to_df)
     root_dir = os.path.dirname(path_to_df)
@@ -257,8 +266,10 @@ def main(FLAGS):
       xaxis_title='Step (In Thousands)',
       yaxis_title='Layer'
     ) 
-
-    output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap{'_pythia' if FLAGS.model == 'pythia' else ''}{'' if resid else '_out'}.json")
+    if resid:
+      output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap{'_pythia' if FLAGS.model == 'pythia' else ''}{'' if resid else '_out'}.json")
+    else:
+      output_filename = os.path.join(root_dir, "components", f"{FLAGS.metric.replace(' ', '_')}_heatmap{'' if resid else '_out'}{'_head_'+str(FLAGS.attention_head) if FLAGS.attention_head is not None else ''}.json")
     # output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.json")
     fig.write_json(output_filename)
     
@@ -276,7 +287,10 @@ def main(FLAGS):
         max_val_row = df.index.get_loc(df[col].idxmax())
         ax.add_patch(patches.Rectangle((col_idx, max_val_row), 1, 1, fill=False, edgecolor='white', lw=2))
     plt.tight_layout()
-    output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap{'_pythia' if FLAGS.model == 'pythia' else ''}{'' if resid else '_out'}.png")
+    if resid:
+      output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap{'_pythia' if FLAGS.model == 'pythia' else ''}{'' if resid else '_out'}.png")
+    else:
+      output_filename = os.path.join(root_dir, "components", f"{FLAGS.metric.replace(' ', '_')}_heatmap{'' if resid else '_out'}{'_head_'+str(FLAGS.attention_head) if FLAGS.attention_head is not None else ''}.png")
     # output_filename = os.path.join(root_dir, f"{FLAGS.metric.replace(' ', '_')}_heatmap.png")
     plt.savefig(output_filename, dpi=300)
     plt.close()
@@ -294,5 +308,6 @@ if __name__ == "__main__":
   argparser.add_argument("--line-graph", type=str, default="False")
   argparser.add_argument("--gen-figure", type=str, default="False")
   argparser.add_argument("--resid", type=str, default="True")
+  argparser.add_argument("--attention-head", type=int, default=None)
   FLAGS = argparser.parse_args()
   main(FLAGS)

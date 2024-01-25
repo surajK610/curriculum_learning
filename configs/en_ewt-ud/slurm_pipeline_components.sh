@@ -2,10 +2,10 @@
 #SBATCH --job-name=en_ewt-ud
 #SBATCH --output=outputs/en_ewt-ud/slurm_out/log_%a.out
 #SBATCH --error=outputs/en_ewt-ud/slurm_out/log_%a.err
-#SBATCH --array=0-431%432
+#SBATCH --array=289-431%432
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
-#SBATCH -p 3090-gcondo --gres=gpu:1
+#SBATCH -p gpu --gres=gpu:1
 #SBATCH --cpus-per-task=1
 
 DATE=$(date +%m-%d)
@@ -36,7 +36,7 @@ type=${types[$type_index]}
 num_labels_type=${num_labels[$type_index]}
 layer=${layer[$layer_index]}
 
-echo "Running Experiment with step: $step and type: $type"
+echo "Running Experiment with step: $step and type: $type and layer $layer"
 
 # dirhere=$EXPERIMENT_CONFIG_DIR/seed_0_step_${step}
 # mkdir -p $dirhere
