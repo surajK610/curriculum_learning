@@ -98,7 +98,7 @@ def main(config):
                 f.write(f"Avg UUAS: {test_uuas:.4f}\n")
                 f.write(f"Avg Distance DSpr.: {test_distance_dspr:.4f}\n")
         else:
-            with open(os.path.join(output_dir, model_name, {layer_name}, f"val_metrics_distance_out{'_head_' + str(attention_head) if attention_head is not None else ''}.txt"), "w") as f:
+            with open(os.path.join(output_dir, model_name, layer_name, f"val_metrics_distance_out{'_head_' + str(attention_head) if attention_head is not None else ''}.txt"), "w") as f:
                 f.write(f"Avg UUAS: {test_uuas:.4f}\n")
                 f.write(f"Avg Distance DSpr.: {test_distance_dspr:.4f}\n")
                 
@@ -118,7 +118,7 @@ def main(config):
                 f.write(f"Avg Acc: {test_acc:.4f}\n")
                 f.write(f"Avg Depth DSpr.: {test_depth_dspr:.4f}\n")
         else:
-            with open(os.path.join(output_dir, model_name, layer_name, "val_metrics_depth_out.txt"), "w") as f:
+            with open(os.path.join(output_dir, model_name, layer_name, f"val_metrics_depth_out{'_head_' + str(attention_head) if attention_head is not None else ''}.txt"), "w") as f:
                 f.write(f"Avg Acc: {test_acc:.4f}\n")
                 f.write(f"Avg Depth DSpr.: {test_depth_dspr:.4f}\n")
         

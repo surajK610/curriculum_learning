@@ -5,7 +5,7 @@
 #SBATCH --array=289-431%432
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
-#SBATCH -p gpu --gres=gpu:1
+#SBATCH -p 3090-gcondo --gres=gpu:1
 #SBATCH --cpus-per-task=1
 
 DATE=$(date +%m-%d)

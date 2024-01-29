@@ -31,7 +31,11 @@ type_index=$((SLURM_ARRAY_TASK_ID / 12))
 step=${steps[$step_index]}
 type=${types[$type_index]}
 
-python3 -m src.experiments.aheads --probe-residuals True --checkpoint $step --detection-pattern $type --resid $RESID
+if [ $step_index -eq 0 ]; then
+  python3 -m src.experiments.aheads --probe-residuals True --checkpoint $step --detection-pattern $type --resid $RESID --make-dataset True
+  else
+  python3 -m src.experiments.aheads --probe-residuals True --checkpoint $step --detection-pattern $type --resid $RESID --make-dataset False
+fi
 
 if [ $SLURM_ARRAY_TASK_ID -eq 35 ]; then
   python3 src/collate_metrics.py --exp duplicate_token_head --dataset  aheads --metric "Val Acc"

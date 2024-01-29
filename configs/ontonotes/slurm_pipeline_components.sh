@@ -2,7 +2,7 @@
 #SBATCH --job-name=ontonotes
 #SBATCH --output=outputs/ontonotes/slurm_out/log_%a.out
 #SBATCH --error=outputs/ontonotes/slurm_out/log_%a.err
-#SBATCH --array=0-431%432
+#SBATCH --array=159-184%432
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
 #SBATCH -p 3090-gcondo --gres=gpu:1

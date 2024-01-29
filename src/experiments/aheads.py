@@ -21,6 +21,7 @@ sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments')
 
 from utils.probing_utils import AccuracyProbe
+from utils.data_utils import makeHooks, decomposeHeads, decomposeSingleHead
 from torch.utils.data import DataLoader, TensorDataset
 from pytorch_lightning import Trainer
 
@@ -55,6 +56,7 @@ SEQ_LEN_ERR = (
 
 DET_PAT_NOT_SQUARE_ERR = "The detection pattern must be a lower triangular matrix of shape (sequence_length, sequence_length); sequence_length=%d; got detection patern of shape %s"
 
+LAYER_COUNT = 13
 
 def detect_head_batch(model, tokens_list, detection_pattern):
   batch_scores = [detect_head(model, tokens, detection_pattern) for tokens in tqdm(tokens_list)]
@@ -114,28 +116,11 @@ def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector
     task_labels = []
     model.eval()
     model.config.output_hidden_states = True
+    n_layers = model.config.num_hidden_layers
     if ~resid:
-      self_attention_outputs = []
-      mlp_outputs = []
-      embedding_outputs = []
-      def hook_embedding(module, input, output):
-          if isinstance(output, tuple):
-              output = output[0]
-          embedding_outputs.append(output)
-      def hook_self_attention(module, input, output):
-          if isinstance(output, tuple):
-              output = output[0]
-          self_attention_outputs.append(output)
-      def hook_mlp(module, input, output):
-          if isinstance(output, tuple):
-              output = output[0]
-          mlp_outputs.append(output)
+        cache = defaultdict(list)
+        cache = makeHooks(model, cache, mlp=True, attn=True, embeddings=True, remove_batch_dim=False, device=device)
        
-      model.embeddings.register_forward_hook(hook_embedding)
-      for layer in model.encoder.layer:
-          layer.attention.self.register_forward_hook(hook_self_attention)
-          layer.output.dense.register_forward_hook(hook_mlp)
-        
     relevant_activations = defaultdict(list)    
     for _ in tqdm(range(num_samples), desc=f'Generating activations for {type} dataset'):
         vector_size = torch.randint(min_vector_size, max_vector_size, (1,)).item()
@@ -169,16 +154,26 @@ def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector
         task_labels.append(label.to(device))
         with torch.no_grad():
           output = model(tokens.to(device))
-          cache = output.hidden_states
           if ~resid:
-            combined_outputs = embedding_outputs + [sa + mlp for sa, mlp in zip(self_attention_outputs, mlp_outputs)]
-            cache = combined_outputs.copy()
+            attn_outputs = cache['attention'].copy()
+            mlp_outputs = cache['mlp'].copy()
+            embedding_outputs = cache['embedding'].copy()
             
-            self_attention_outputs.clear()
-            mlp_outputs.clear()
-            embedding_outputs.clear()
-          for i, val in enumerate(cache):
-            relevant_activations[i].append(val.squeeze(0)[idx, :])
+            cache['attention'].clear()
+            cache['mlp'].clear()
+            cache['embedding'].clear()
+            relevant_activations[0].append(embedding_outputs[0].squeeze(0)[idx, :])
+            ### embedding outputs
+            for i in range(n_layers):
+              relevant_activations[i+1].append(mlp_outputs[i].squeeze(0)[idx, :])
+              ### mlp outputs
+            for i in range(n_layers):
+              relevant_activations[i+1+n_layers].append(attn_outputs[i].squeeze(0)[idx, :])
+              ### attention outputs 
+          else:
+            cache = output.hidden_states
+            for i, val in enumerate(cache):
+              relevant_activations[i].append(val.squeeze(0)[idx, :])
     task_labels = torch.concat(task_labels, dim=0).unsqueeze(0).to(device)
     for i in relevant_activations:
         relevant_activations[i] = torch.vstack(relevant_activations[i])
@@ -235,41 +230,72 @@ def main(FLAGS):
     save_model_name = f"google/multiberts-seed_0-step_{checkpoint}k".split("/")[-1]
     # for detection_pattern in HEAD_NAMES:
     detection_pattern = FLAGS.detection_pattern
-    relevant_activations, task_labels = generate_algo_task_dataset(model, num_samples=40000, min_vector_size=8, max_vector_size=10, max_vocab=FLAGS.max_vocab, type=detection_pattern, device=device, resid=resid)
-    
+    if FLAGS.make_dataset == "True":
+      relevant_activations, task_labels = generate_algo_task_dataset(model, num_samples=40000, min_vector_size=8, max_vector_size=10, max_vocab=FLAGS.max_vocab, type=detection_pattern, device=device, resid=resid)
+      torch.save(relevant_activations, os.path.join(output_dir, detection_pattern, f"relevant_activations{'_resid' if resid else ''}.pt"))
+      torch.save(task_labels, os.path.join(output_dir, detection_pattern, f"task_labels{'_resid' if resid else ''}.pt"))
+    else:
+      relevant_activations = torch.load(os.path.join(output_dir, detection_pattern, f"relevant_activations{'_resid' if resid else ''}.pt"))
+      task_labels = torch.load(os.path.join(output_dir, detection_pattern, f"task_labels{'_resid' if resid else ''}.pt"))
+      
     num_labels = task_labels.max() + 1
+    n_layers = model.config.num_hidden_layers
+    # for i in range(n_layers+1):
+    #   print("Training probe for layer", i)
+      
+    #   probe = AccuracyProbe(relevant_activations[0].shape[-1], num_labels, FLAGS.finetune_model).to(device)
+    #   n_examples = relevant_activations[i].shape[0]
+    #   train_len = int(0.8 * n_examples)
+    #   perm = torch.randperm(n_examples)
+    #   shuffled_data = relevant_activations[i].detach()[perm]
+    #   shuffled_labels = task_labels.view(-1, 1)[perm]
+      
+    #   train_dataset = TensorDataset(shuffled_data[:train_len], shuffled_labels[:train_len])
+    #   val_dataset = TensorDataset(shuffled_data[train_len:], shuffled_labels[train_len:])
+    #   train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True)
+    #   val_dataloader = DataLoader(val_dataset, batch_size=FLAGS.batch_size, shuffle=False)
+      
+    #   trainer = Trainer(max_epochs=FLAGS.epochs) ## start w/ 1 epoch
+    #   trainer.fit(probe, train_dataloader, val_dataloader)
+    #   val_logs = trainer.validate(probe, val_dataloader)
+      
+    #   layer_str = "layer-" + str(i)
+    #   os.makedirs(os.path.join(output_dir, detection_pattern, save_model_name, layer_str), exist_ok=True)
+    #   with open(os.path.join(output_dir, detection_pattern, save_model_name, layer_str, f"val_acc{'' if resid else '_out'}.txt"), "w") as f:
+    #     f.write(str(val_logs))
+    #   print(val_logs)
     
-    for i in range(model.config.num_hidden_layers+1):
-      print("Training probe for layer", i)
-      
-      probe = AccuracyProbe(relevant_activations[0].shape[-1], num_labels, FLAGS.finetune_model).to(device)
-      n_examples = relevant_activations[i].shape[0]
-      train_len = int(0.8 * n_examples)
-      perm = torch.randperm(n_examples)
-      shuffled_data = relevant_activations[i].detach()[perm]
-      shuffled_labels = task_labels.view(-1, 1)[perm]
-      
-      train_dataset = TensorDataset(shuffled_data[:train_len], shuffled_labels[:train_len])
-      val_dataset = TensorDataset(shuffled_data[train_len:], shuffled_labels[train_len:])
-      train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True)
-      val_dataloader = DataLoader(val_dataset, batch_size=FLAGS.batch_size, shuffle=False)
-      
-      trainer = Trainer(max_epochs=FLAGS.epochs) ## start w/ 1 epoch
-      trainer.fit(probe, train_dataloader, val_dataloader)
-      val_logs = trainer.validate(probe, val_dataloader)
-      
-      layer_str = "layer-" + str(i)
-      os.makedirs(os.path.join(output_dir, detection_pattern, save_model_name, layer_str), exist_ok=True)
-      with open(os.path.join(output_dir, detection_pattern, save_model_name, layer_str, f"val_acc{'' if resid else '_out'}.txt"), "w") as f:
-        f.write(str(val_logs))
-      print(val_logs)
+    if ~resid:
+      for i in range(n_layers):
+        for attention_head in range(model.config.num_attention_heads):
+          print(f"Training probe for layer {i}, head {attention_head}")
+          head_activation_vectors = decomposeSingleHead(model, relevant_activations[i+n_layers+1].cpu().numpy(), i, attention_head)
+          probe = AccuracyProbe(relevant_activations[0].shape[-1], num_labels, FLAGS.finetune_model).to(device)
+          n_examples = head_activation_vectors.shape[0]
+          train_len = int(0.8 * n_examples)
+          perm = torch.randperm(n_examples)
+          shuffled_data = torch.tensor(head_activation_vectors).to(device)[perm]
+          shuffled_labels = task_labels.view(-1, 1)[perm]
+          train_dataset = TensorDataset(shuffled_data[:train_len], shuffled_labels[:train_len])
+          val_dataset = TensorDataset(shuffled_data[train_len:], shuffled_labels[train_len:])
+          train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True)
+          val_dataloader = DataLoader(val_dataset, batch_size=FLAGS.batch_size, shuffle=False)
+          trainer = Trainer(max_epochs=FLAGS.epochs) ## start w/ 1 epoch
+          trainer.fit(probe, train_dataloader, val_dataloader)
+          val_logs = trainer.validate(probe, val_dataloader)
+          layer_str = "layer-" + str(i+1)
+          os.makedirs(os.path.join(output_dir, detection_pattern, save_model_name, layer_str), exist_ok=True)
+          with open(os.path.join(output_dir, detection_pattern, save_model_name, layer_str, f"val_acc_out{'_head_' + str(attention_head)}.txt"), "w") as f:
+            f.write(str(val_logs))
+          print(val_logs)
+    
 
-    # dict_df_heads[detection_pattern][checkpoint][i] = val_logs
-                
-    # for detection_pattern in HEAD_NAMES:
-    #   dir_out = os.path.join("outputs/aheads", detection_pattern)
-    #   os.makedirs(dir_out, exist_ok=True)
-    #   dict_df_heads[detection_pattern].to_csv(os.path.join(dir_out, f"probe_{detection_pattern}.csv"), sep="\t")
+      # dict_df_heads[detection_pattern][checkpoint][i] = val_logs
+                  
+      # for detection_pattern in HEAD_NAMES:
+      #   dir_out = os.path.join("outputs/aheads", detection_pattern)
+      #   os.makedirs(dir_out, exist_ok=True)
+      #   dict_df_heads[detection_pattern].to_csv(os.path.join(dir_out, f"probe_{detection_pattern}.csv"), sep="\t")
   else:
     if FLAGS.dataset_path is None:
       dataset = create_repeats_dataset()
@@ -313,6 +339,7 @@ if __name__ == "__main__":
   parser.add_argument("--batch-size", default=32, type=int, help="batch size")
   parser.add_argument("--epochs", default=1, type=int, help="epochs")
   parser.add_argument("--resid", default="True", type=str, help="residuals") 
+  parser.add_argument("--make-dataset", default="False", type=str, help="make dataset")
   
   parser.add_argument("--checkpoint", default=143000, type=int, help="checkpoint")
   parser.add_argument("--detection-pattern", default="previous_token_head", type=str, help="detection pattern")
