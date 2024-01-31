@@ -2,10 +2,10 @@
 #SBATCH --job-name=ontonotes
 #SBATCH --output=outputs/ontonotes/slurm_out/log_%a.out
 #SBATCH --error=outputs/ontonotes/slurm_out/log_%a.err
-#SBATCH --array=0-11%36
+#SBATCH --array=0-35%36
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
-#SBATCH -p gpu --gres=gpu:1
+#SBATCH -p 3090-gcondo --gres=gpu:1
 #SBATCH --cpus-per-task=1
 
 DATE=$(date +%m-%d)
@@ -36,11 +36,11 @@ echo "Running Experiment with step: $step and type: $type"
 for layer in {0..12}; do
     dirhere=$EXPERIMENT_CONFIG_DIR/seed_0_step_${step}
     mkdir -p $dirhere
-    if [[ "$layer" -eq 0 && "$type" == "ner" ]]; then
-        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ontonotes --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True  --resid $RESID
-    else
+    # if [[ "$layer" -eq 0 && "$type" == "ner" ]]; then
+    #     python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ontonotes --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True  --resid $RESID
+    # else
         python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ontonotes --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings False  --resid $RESID
-    fi
+    # fi
     cat << EOF > $dirhere/${type}_${layer}.yaml
 dataset:
   dir: "data/ontonotes/dataset/${type}"
@@ -49,6 +49,7 @@ layer_idx: $layer
 model_name: "google/multiberts-seed_0-step_${step}k"
 model_step: "${step}k"
 model_type: "multibert"
+attention_head: null
 resid: $RESID
 probe:
   finetune-model: "linear"

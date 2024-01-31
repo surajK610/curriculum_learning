@@ -2,7 +2,7 @@
 #SBATCH --job-name=en_ewt-ud
 #SBATCH --output=outputs/en_ewt-ud/slurm_out/log_%a.out
 #SBATCH --error=outputs/en_ewt-ud/slurm_out/log_%a.err
-#SBATCH --array=11-11%36
+#SBATCH --array=0-35%36
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
 #SBATCH -p 3090-gcondo --gres=gpu:1
@@ -37,17 +37,18 @@ echo "Running Experiment with step: $step and type: $type"
 for layer in {0..12}; do
     dirhere=$EXPERIMENT_CONFIG_DIR/seed_0_step_${step}
     mkdir -p $dirhere
-    if [[ "$layer" -eq 0 && "$type" == "fpos" ]]; then
-        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True --resid $RESID
-    else
-        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings False --resid $RESID
-    fi
+    # if [[ "$layer" -eq 0 && "$type" == "fpos" ]]; then
+    #     python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True --resid $RESID
+    # else
+    python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings False --resid $RESID
+    # fi
     cat << EOF > $dirhere/${type}_${layer}.yaml
 dataset:
   dir: "data/en_ewt-ud/dataset/${type}"
   task_name: "${type}"
 layer_idx: $layer
 model_name: "google/multiberts-seed_0-step_${step}k"
+attention_head: null
 resid: $RESID
 probe:
   finetune-model: "linear"

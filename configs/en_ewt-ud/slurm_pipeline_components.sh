@@ -2,7 +2,7 @@
 #SBATCH --job-name=en_ewt-ud
 #SBATCH --output=outputs/en_ewt-ud/slurm_out/log_%a.out
 #SBATCH --error=outputs/en_ewt-ud/slurm_out/log_%a.err
-#SBATCH --array=289-431%432
+#SBATCH --array=0-287%432
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
 #SBATCH -p 3090-gcondo --gres=gpu:1
@@ -41,6 +41,7 @@ echo "Running Experiment with step: $step and type: $type and layer $layer"
 # dirhere=$EXPERIMENT_CONFIG_DIR/seed_0_step_${step}
 # mkdir -p $dirhere
 # python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index 0 --compute-embeddings True --resid $RESID
+
 
 for head in ""{0..11}; do
   if [ -z "$head" ]; then
@@ -91,37 +92,3 @@ EOF
   rm $LEARNING_DYNAMICS_HOME/data/en_ewt-ud/dataset/${type}/multiberts-seed_0-step_${step}k/*-layer-${layer}-${head}.pt
   fi
 done
-
-
-# for layer in {0..157}; do
-#     dirhere=$EXPERIMENT_CONFIG_DIR/seed_0_step_${step}
-#     mkdir -p $dirhere
-#     if [[ "$layer" -eq 0 && "$type" == "fpos" ]]; then
-#         python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True --resid $RESID
-#     else
-#         python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ewt --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings False --resid $RESID
-#     fi
-#     cat << EOF > $dirhere/${type}_${layer}.yaml
-# dataset:
-#   dir: "data/en_ewt-ud/dataset/${type}"
-#   task_name: "${type}"
-# layer_idx: $layer
-# model_name: "google/multiberts-seed_0-step_${step}k"
-# resid: $RESID
-# probe:
-#   finetune-model: "linear"
-#   epochs: 4
-#   batch_size: 32
-#   num_labels: $num_labels_type
-#   input_size: 768
-#   output_dir: "outputs/en_ewt-ud/${type}"
-#   lr: "0.001"
-# EOF
-#     python3 $EXPERIMENT_SRC_DIR/en_ewt-ud.py --config $dirhere/${type}_${layer}.yaml
-# done
-
-# if [ $(SLURM_ARRAY_TASK_ID) -eq 35 ]; then
-#   python3 src/collate_metrics.py --exp fpos --dataset en_ewt-ud --metric "Val Acc"
-#   python3 src/collate_metrics.py --exp cpos --dataset en_ewt-ud --metric "Val Acc"
-#   python3 src/collate_metrics.py --exp dep --dataset en_ewt-ud --metric "Val Acc"
-# fi

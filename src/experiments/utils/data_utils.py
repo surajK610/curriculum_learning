@@ -329,7 +329,7 @@ def decomposeHeads(model, attention_vectors):
             else:
                 raise ValueError('Attention layer has unexpected shape')
             
-            attention_head_dict[AttnHead(i, j)] =  attn_slice @ output_slice
+            attention_head_dict[AttnHead(i, j)] =  (attn_slice @ output_slice).cpu().numpy()
     return attention_head_dict
 
 def decomposeSingleHead(model, attention_vector, layer, head):
@@ -337,7 +337,7 @@ def decomposeSingleHead(model, attention_vector, layer, head):
     Decompose attention heads into subspaces.
     layer is 1-indexed so use layer-1
     """
-    attention_head_dict = {}
+    assert layer in range(1, model.config.num_hidden_layers+1)
     output_matrix = model.encoder.layer[layer-1].attention.output.dense.weight.data.T
     output_slice = output_matrix[head*64:(head+1)*64, :]
     if len(attention_vector.shape) == 2:
@@ -395,9 +395,9 @@ def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, devic
                     # only use output of the layer (i.e. attention + mlp)
             if ~resid:
                 dset = fout.create_dataset(
-                    str(index), (LAYER_COUNT + (LAYER_COUNT - 1), len(tokenized_text), FEATURE_COUNT)
+                    str(index), (1 + 2 * model.config.n_layers, len(tokenized_text), FEATURE_COUNT)
                 ) ## 1 for embedding, 12 for attention, 12 for mlp
-                dset[:, :, :] = np.vstack([embedding_outputs[0].cpu().numpy()] + [mlp_outputs[i].cpu().numpy() for i in range(LAYER_COUNT-1)] + [attn_outputs[i].cpu().numpy() for i in range(LAYER_COUNT-1)])
+                dset[:, :, :] = np.vstack([embedding_outputs[0].cpu().numpy()] + [mlp_outputs[i].cpu().numpy() for i in range(model.config.n_layers)] + [attn_outputs[i].cpu().numpy() for i in range(model.config.n_layers)])
             else:
                 dset = fout.create_dataset(
                     str(index), (LAYER_COUNT, len(tokenized_text), FEATURE_COUNT)

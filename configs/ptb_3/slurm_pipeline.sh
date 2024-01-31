@@ -32,11 +32,11 @@ type=${types[$type_index]}
 for layer in {0..12}; do
     dirhere=$EXPERIMENT_CONFIG_DIR/seed_0_step_${step}
     mkdir -p $dirhere
-    if [[ "$layer" -eq 0 && "$type" == "depth" ]]; then
-        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ptb --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True  --resid $RESID
-    else
+    # if [[ "$layer" -eq 0 && "$type" == "depth" ]]; then
+    #     python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ptb --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True  --resid $RESID
+    # else
         python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ptb --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings False  --resid $RESID
-    fi
+    # fi
     cat << EOF > $dirhere/${type}_${layer}.yaml
 dataset:
   dir: "data/ptb_3/dataset/${type}"
@@ -45,10 +45,11 @@ experiment: "${type}"
 model_name: "google/multiberts-seed_0-step_${step}k"
 model_step: "${step}k"
 model_type: "multibert"
+attention_head: null
 resid: $RESID
 probe:
   finetune-model: "linear"
-  epochs: 10
+  epochs: 4
   batch_size: 20
   rep_dim: 64
   input_size: 768

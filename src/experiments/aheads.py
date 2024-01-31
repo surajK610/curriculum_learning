@@ -2,7 +2,7 @@
 Modified from Neel Nanda's https://colab.research.google.com/github/neelnanda-io/TransformerLens/blob/main/demos/Head_Detector_Demo.ipynb#scrollTo=5ikyL8-S7u2Z
 '''
 #sfeature
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 import logging
 from typing import cast, Dict, List, Tuple, Union
 from typing_extensions import get_args, Literal
@@ -240,36 +240,49 @@ def main(FLAGS):
       
     num_labels = task_labels.max() + 1
     n_layers = model.config.num_hidden_layers
-    # for i in range(n_layers+1):
-    #   print("Training probe for layer", i)
+    
+    for i in range(n_layers+1):
+      print("Training probe for layer", i)
       
-    #   probe = AccuracyProbe(relevant_activations[0].shape[-1], num_labels, FLAGS.finetune_model).to(device)
-    #   n_examples = relevant_activations[i].shape[0]
-    #   train_len = int(0.8 * n_examples)
-    #   perm = torch.randperm(n_examples)
-    #   shuffled_data = relevant_activations[i].detach()[perm]
-    #   shuffled_labels = task_labels.view(-1, 1)[perm]
+      probe = AccuracyProbe(relevant_activations[0].shape[-1], num_labels, FLAGS.finetune_model).to(device)
+      n_examples = relevant_activations[i].shape[0]
+      train_len = int(0.8 * n_examples)
+      perm = torch.randperm(n_examples)
+      shuffled_data = relevant_activations[i].detach()[perm]
+      shuffled_labels = task_labels.view(-1, 1)[perm]
       
-    #   train_dataset = TensorDataset(shuffled_data[:train_len], shuffled_labels[:train_len])
-    #   val_dataset = TensorDataset(shuffled_data[train_len:], shuffled_labels[train_len:])
-    #   train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True)
-    #   val_dataloader = DataLoader(val_dataset, batch_size=FLAGS.batch_size, shuffle=False)
+      train_dataset = TensorDataset(shuffled_data[:train_len], shuffled_labels[:train_len])
+      val_dataset = TensorDataset(shuffled_data[train_len:], shuffled_labels[train_len:])
+      train_dataloader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True)
+      val_dataloader = DataLoader(val_dataset, batch_size=FLAGS.batch_size, shuffle=False)
       
-    #   trainer = Trainer(max_epochs=FLAGS.epochs) ## start w/ 1 epoch
-    #   trainer.fit(probe, train_dataloader, val_dataloader)
-    #   val_logs = trainer.validate(probe, val_dataloader)
+      trainer = Trainer(max_epochs=FLAGS.epochs) ## start w/ 1 epoch
+      trainer.fit(probe, train_dataloader, val_dataloader)
+      val_logs = trainer.validate(probe, val_dataloader)
       
-    #   layer_str = "layer-" + str(i)
-    #   os.makedirs(os.path.join(output_dir, detection_pattern, save_model_name, layer_str), exist_ok=True)
-    #   with open(os.path.join(output_dir, detection_pattern, save_model_name, layer_str, f"val_acc{'' if resid else '_out'}.txt"), "w") as f:
-    #     f.write(str(val_logs))
-    #   print(val_logs)
+      layer_str = "layer-" + str(i)
+      os.makedirs(os.path.join(output_dir, detection_pattern, save_model_name, layer_str), exist_ok=True)
+      with open(os.path.join(output_dir, detection_pattern, save_model_name, layer_str, f"val_acc{'' if resid else '_out'}.txt"), "w") as f:
+        f.write(str(val_logs))
+      print(val_logs)
+    
+    # list_attn_heads = [relevant_activations[i+1+n_layers] for i in range(n_layers)]
+    # AttnHead = namedtuple('AttnHead', ['layer', 'head'])
+    # head_vals = decomposeHeads(model, list_attn_heads)
     
     if ~resid:
       for i in range(n_layers):
-        for attention_head in range(model.config.num_attention_heads):
-          print(f"Training probe for layer {i}, head {attention_head}")
-          head_activation_vectors = decomposeSingleHead(model, relevant_activations[i+n_layers+1].cpu().numpy(), i, attention_head)
+        for attention_head in range(-1, model.config.num_attention_heads):
+          print(f"Training probe for layer {i+1}, head {attention_head}")
+          if attention_head == -1:
+            head_activation_vectors = relevant_activations[n_layers+i+1].cpu().numpy()
+          else:
+            head_activation_vectors = decomposeSingleHead(model, relevant_activations[n_layers+i+1].cpu().numpy(), i+1, attention_head)
+          # i+1 because layers need to be 1-indexed for fxn call (0 is embeddings)
+          
+          # closeness = np.isclose(head_vals[AttnHead(i, attention_head)], head_activation_vectors, 1e-3).mean()
+          # print("Closeness to Ground Truth", closeness, closeness > 0.98)
+          
           probe = AccuracyProbe(relevant_activations[0].shape[-1], num_labels, FLAGS.finetune_model).to(device)
           n_examples = head_activation_vectors.shape[0]
           train_len = int(0.8 * n_examples)
@@ -285,11 +298,10 @@ def main(FLAGS):
           val_logs = trainer.validate(probe, val_dataloader)
           layer_str = "layer-" + str(i+1)
           os.makedirs(os.path.join(output_dir, detection_pattern, save_model_name, layer_str), exist_ok=True)
-          with open(os.path.join(output_dir, detection_pattern, save_model_name, layer_str, f"val_acc_out{'_head_' + str(attention_head)}.txt"), "w") as f:
+          with open(os.path.join(output_dir, detection_pattern, save_model_name, layer_str, f"val_acc_out{'_head_' + str(attention_head) if attention_head >= 0 else '_attn'}.txt"), "w") as f:
             f.write(str(val_logs))
           print(val_logs)
     
-
       # dict_df_heads[detection_pattern][checkpoint][i] = val_logs
                   
       # for detection_pattern in HEAD_NAMES:
@@ -337,7 +349,7 @@ if __name__ == "__main__":
   parser.add_argument("--max-vocab", default=30, type=int, help="max vocab size")
   parser.add_argument("--finetune-model", default="linear", type=str, help="finetune model")
   parser.add_argument("--batch-size", default=32, type=int, help="batch size")
-  parser.add_argument("--epochs", default=1, type=int, help="epochs")
+  parser.add_argument("--epochs", default=2, type=int, help="epochs")
   parser.add_argument("--resid", default="True", type=str, help="residuals") 
   parser.add_argument("--make-dataset", default="False", type=str, help="make dataset")
   

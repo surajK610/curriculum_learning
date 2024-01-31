@@ -54,7 +54,7 @@ resid: $RESID
 attention_head: null
 probe:
   finetune-model: "linear"
-  epochs: 10
+  epochs: 4
   batch_size: 20
   rep_dim: 64
   input_size: 768
@@ -79,7 +79,7 @@ resid: $RESID
 attention_head: $head
 probe:
   finetune-model: "linear"
-  epochs: 10
+  epochs: 4
   batch_size: 20
   rep_dim: 64
   input_size: 768

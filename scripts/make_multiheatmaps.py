@@ -22,7 +22,7 @@ def generate_heatmaps(folder_path, output_path):
         df = pd.read_csv(os.path.join(folder_path, file), delimiter='\t').drop('Layer', axis=1) 
         df.index = df.index[::-1]
         ax = axes[i // ncols, i % ncols]
-        sns.heatmap(df, ax=ax, vmin=vmin, vmax=vmax, cbar=i == len(csv_files) - 1)
+        sns.heatmap(df, ax=ax) #vmin=vmin, vmax=vmax, cbar=i == len(csv_files) - 1)
         ax.set_title(file.split('.')[0].split('heatmap_')[-1])  # Set subtitle as file name (without extension)
 
     for j in range(i + 1, nrows * ncols):

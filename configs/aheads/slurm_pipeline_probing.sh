@@ -6,7 +6,7 @@
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
 
-#SBATCH -p gpu --gres=gpu:1
+#SBATCH -p 3090-gcondo --gres=gpu:1
 #SBATCH --cpus-per-task=1
 
 DATE=$(date +%m-%d)
@@ -31,11 +31,13 @@ type_index=$((SLURM_ARRAY_TASK_ID / 12))
 step=${steps[$step_index]}
 type=${types[$type_index]}
 
-if [ $step_index -eq 0 ]; then
-  python3 -m src.experiments.aheads --probe-residuals True --checkpoint $step --detection-pattern $type --resid $RESID --make-dataset True
-  else
-  python3 -m src.experiments.aheads --probe-residuals True --checkpoint $step --detection-pattern $type --resid $RESID --make-dataset False
-fi
+python3 -m src.experiments.aheads --probe-residuals True --checkpoint $step --detection-pattern $type --resid $RESID --make-dataset False
+
+# if [ $step_index -eq 0 ]; then
+#   python3 -m src.experiments.aheads --probe-residuals True --checkpoint $step --detection-pattern $type --resid $RESID --make-dataset True
+#   else
+#   python3 -m src.experiments.aheads --probe-residuals True --checkpoint $step --detection-pattern $type --resid $RESID --make-dataset False
+# fi
 
 if [ $SLURM_ARRAY_TASK_ID -eq 35 ]; then
   python3 src/collate_metrics.py --exp duplicate_token_head --dataset  aheads --metric "Val Acc"
