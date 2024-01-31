@@ -16,3 +16,6 @@ en_ewt-ud/*
 configs/*/seed_*_step_*/*
 configs/*/pythia_160m_step_*/*
 src/lightning_logs/*
+src/notebooks/lightning_logs/
+**/.ipynb_checkpoints/
+srcipynb_checkpoints/
