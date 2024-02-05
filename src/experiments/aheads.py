@@ -117,7 +117,7 @@ def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector
     model.eval()
     model.config.output_hidden_states = True
     n_layers = model.config.num_hidden_layers
-    if ~resid:
+    if not resid:
         cache = defaultdict(list)
         cache = makeHooks(model, cache, mlp=True, attn=True, embeddings=True, remove_batch_dim=False, device=device)
        
@@ -154,7 +154,7 @@ def generate_algo_task_dataset(model, num_samples, min_vector_size=3, max_vector
         task_labels.append(label.to(device))
         with torch.no_grad():
           output = model(tokens.to(device))
-          if ~resid:
+          if not resid:
             attn_outputs = cache['attention'].copy()
             mlp_outputs = cache['mlp'].copy()
             embedding_outputs = cache['embedding'].copy()
@@ -230,14 +230,10 @@ def main(FLAGS):
     save_model_name = f"google/multiberts-seed_0-step_{checkpoint}k".split("/")[-1]
     # for detection_pattern in HEAD_NAMES:
     detection_pattern = FLAGS.detection_pattern
-    if FLAGS.make_dataset == "True":
-      relevant_activations, task_labels = generate_algo_task_dataset(model, num_samples=40000, min_vector_size=8, max_vector_size=10, max_vocab=FLAGS.max_vocab, type=detection_pattern, device=device, resid=resid)
-      torch.save(relevant_activations, os.path.join(output_dir, detection_pattern, f"relevant_activations{'_resid' if resid else ''}.pt"))
-      torch.save(task_labels, os.path.join(output_dir, detection_pattern, f"task_labels{'_resid' if resid else ''}.pt"))
-    else:
-      relevant_activations = torch.load(os.path.join(output_dir, detection_pattern, f"relevant_activations{'_resid' if resid else ''}.pt"))
-      task_labels = torch.load(os.path.join(output_dir, detection_pattern, f"task_labels{'_resid' if resid else ''}.pt"))
-      
+    relevant_activations, task_labels = generate_algo_task_dataset(model, num_samples=40000, min_vector_size=8, max_vector_size=10, max_vocab=FLAGS.max_vocab, type=detection_pattern, device=device, resid=resid)
+    # torch.save(relevant_activations, os.path.join(output_dir, detection_pattern, f"relevant_activations{'_resid' if resid else ''}.pt"))
+    # torch.save(task_labels, os.path.join(output_dir, detection_pattern, f"task_labels{'_resid' if resid else ''}.pt"))
+   
     num_labels = task_labels.max() + 1
     n_layers = model.config.num_hidden_layers
     
@@ -270,7 +266,7 @@ def main(FLAGS):
     # AttnHead = namedtuple('AttnHead', ['layer', 'head'])
     # head_vals = decomposeHeads(model, list_attn_heads)
     
-    if ~resid:
+    if not resid:
       for i in range(n_layers):
         for attention_head in range(-1, model.config.num_attention_heads):
           print(f"Training probe for layer {i+1}, head {attention_head}")

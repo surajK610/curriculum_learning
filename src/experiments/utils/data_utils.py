@@ -358,7 +358,7 @@ def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, devic
     """
 
     model.eval()
-    if ~resid:
+    if not resid:
         cache = defaultdict(list)
         cache = makeHooks(model, cache, mlp=True, attn=True, embeddings=True, remove_batch_dim=False, device=device)
         
@@ -384,7 +384,7 @@ def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, devic
                 )
                 # embeddings + 12 layers
                 encoded_layers = encoded_layers[-1]
-                if ~resid:
+                if not resid:
                     attn_outputs = cache['attention'].copy()
                     mlp_outputs = cache['mlp'].copy()
                     embedding_outputs = cache['embedding'].copy()
@@ -393,7 +393,7 @@ def saveBertHDF5(path, text, tokenizer, model, LAYER_COUNT, FEATURE_COUNT, devic
                     cache['mlp'].clear()
                     cache['embedding'].clear()
                     # only use output of the layer (i.e. attention + mlp)
-            if ~resid:
+            if not resid:
                 dset = fout.create_dataset(
                     str(index), (1 + 2 * model.config.n_layers, len(tokenized_text), FEATURE_COUNT)
                 ) ## 1 for embedding, 12 for attention, 12 for mlp

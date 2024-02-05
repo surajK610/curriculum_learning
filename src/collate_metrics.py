@@ -114,6 +114,7 @@ def collate_validation_accuracy(root_dir, dataset, model, exp, resid, attention_
 def main(FLAGS):  
   home = os.environ['LEARNING_DYNAMICS_HOME']
   resid = FLAGS.resid == 'True'
+  print(resid)
   if FLAGS.gen_figure == 'True':
     file_paths = {
       'semantic':
@@ -123,19 +124,20 @@ def main(FLAGS):
       'syntax':
         ['outputs/ontonotes/phrase_start/Val_Acc.csv',
         'outputs/ontonotes/phrase_end/Val_Acc.csv',
-        # 'outputs/en_ewt-ud/dep/Val_Acc.csv'
-        # 'outputs/ptb_3/depth/Root_Acc.csv',
-        # 'outputs/ptb_3/distance/UUAS.csv'
+        'outputs/en_ewt-ud/dep/Val_Acc.csv',
+        'outputs/ptb_3/depth/Root_Acc.csv',
+        'outputs/ptb_3/distance/UUAS.csv'
         ],
       'algorithmic':
         ['outputs/aheads/duplicate_token_head/Val_Acc.csv', 
          'outputs/aheads/induction_head/Val_Acc.csv',
          'outputs/aheads/previous_token_head/Val_Acc.csv']
     }
-    if ~resid:
+    if not resid:
       file_paths = {k: [s.replace('.', '_out.') for s in v] for k, v in file_paths.items()}
       print(file_paths.keys())
-    
+      
+    print(file_paths.items())
     for key, fps in file_paths.items():
       print(key)
       n = len(fps)
@@ -149,7 +151,7 @@ def main(FLAGS):
 
       for i, (ax, df, title) in enumerate(zip(axs, dataframes, titles)):
           df.index = df.index[::-1]
-          if ~resid:
+          if not resid:
             df = df[['0', '20', '40', '60', '80', '100', '200', '1000', '1400', '1600', '1800', '2000']]
             # just for now to ensure consistency of step samples
           sns.heatmap(df, ax=ax, annot_kws={"size":16})
@@ -222,7 +224,8 @@ def main(FLAGS):
     df.sort_index(axis=1, inplace=True)
     df.sort_index(axis=0, inplace=True, ascending=False)
     df.index= df.index.map(lambda x: layer_name_dict[f'layer-{x}'])
-    if ~resid:
+    print(df.columns)
+    if not resid:
         df = df[[0, 20, 40, 60, 80, 100, 200, 1000, 1400, 1600, 1800, 2000]] # just for now to ensure consistency of step samples
     if FLAGS.save == 'True':
       if resid:
