@@ -19,3 +19,5 @@ src/lightning_logs/*
 src/notebooks/lightning_logs/
 **/.ipynb_checkpoints/
 srcipynb_checkpoints/
+src/notebooks/models
+src/notebooks/images
