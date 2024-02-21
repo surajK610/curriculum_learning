@@ -20,20 +20,7 @@ import pandas as pd
 from tqdm.notebook import tqdm
 from functools import partial
 
-from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader, TensorDataset
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
-
-
-from transformer_lens import HookedTransformer
-from transformer_lens.utils import is_square
-from transformer_lens.head_detector import (compute_head_attention_similarity_score, 
-                      get_previous_token_head_detection_pattern, 
-                      get_duplicate_token_head_detection_pattern,
-                      get_induction_head_detection_pattern)
-
-
 
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments/utils')
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments')
@@ -99,13 +86,10 @@ def bin_val_loop(model, test_dataloader):
     return results
   
 def parameterize_pos_vocab(num_pos_tokens):
-  num_pos_tokens = 100
   assert num_pos_tokens % 2 == 0, "Has to be even"
-  
   global special_token_dict_pos
   global noun_tokens
   global adj_tokens
-
   special_token_dict_pos = {
       'cop': num_pos_tokens,
       'null': num_pos_tokens+1,
@@ -144,7 +128,6 @@ def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train'
             else:
                 seq.extend([noun, special_token_dict_pos['null'], noun, noun])
             seq_alt = seq.copy()
-              
         elif rand_val < 0.80: 
             noun = sample_func('noun')
             seq = [noun, special_token_dict_pos['cop'], special_token_dict_pos['null']]
@@ -154,7 +137,6 @@ def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train'
             else:
                 seq.extend([noun, special_token_dict_pos['null'], noun, noun])
             seq_alt = seq.copy()
-
         elif rand_val < 0.90: 
             adj, noun = sample_func('adj'), sample_func('noun')
             seq = [special_token_dict_pos['cop'], adj, noun]
@@ -165,7 +147,6 @@ def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train'
             else:
                 seq.extend([noun, adj, noun, noun])
                 seq_alt.extend([noun, special_token_dict_pos['null'], noun, noun])
-                
         else:
             adj, noun = sample_func('adj'), sample_func('noun')
             seq = [noun, special_token_dict_pos['cop'], adj]
@@ -176,10 +157,8 @@ def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train'
             else:
                 seq.extend([noun, adj, noun, noun])
                 seq_alt.extend([noun, special_token_dict_pos['null'], noun, noun])
-
         label_seq = seq.copy()
         alt_labels_seq = seq_alt.copy()
-        
         if masking=='train':
             for i in range(len(seq)):
                 if random.random() < mask_probability:
@@ -197,7 +176,6 @@ def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train'
         dataset.append(seq)
         labels.append(label_seq)
         alt_labels.append(alt_labels_seq)
-
     return dataset, labels, alt_labels
 
 
@@ -282,7 +260,7 @@ def create_dataset_task_dep(num_examples, mask_probability=0.15, masking='train'
 def create_dataloaders(num_train, num_val, device="cpu", task=create_dataset_task_pos, batch_size=128):
     inputs_t, labels_t, alt_labels_t = task(num_train, mask_probability=0.15, masking='test')
     inputs_v, labels_v, alt_labels_v = task(num_val, mask_probability=0, masking='test')
-    
+
     inputs_t = torch.tensor(inputs_t).to(device)
     labels_t = torch.tensor(labels_t).to(device)
     alt_labels_t = torch.tensor(alt_labels_t).to(device)
@@ -304,7 +282,7 @@ def create_dataloaders_bin(data, labels, device="cpu"):
     inputs_v, labels_v = data[train_len:], labels[train_len:]
     train_dataset = TensorDataset(inputs_t.detach(), labels_t.view(-1, 1))
     val_dataset = TensorDataset(inputs_v.detach(), labels_v.view(-1, 1))
-    
+
     train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=0)
     val_dataloader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=0)
     
@@ -451,6 +429,8 @@ def main(args):
     num_epochs = args.epochs
     batch_size = args.batch_size
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    parameterize_pos_vocab(args.vocab_size) if args.task == 'pos' else parameterize_dep_vocab(400, 20)
+    
     task=create_dataset_task_pos if args.task == 'pos' else create_dataset_task_dep
     torch.manual_seed(args.seed)
     random.seed(args.seed)
@@ -472,12 +452,15 @@ def main(args):
     
     max_num_steps = args.dataset_size *  num_epochs/batch_size
     print('Max number of steps is ', max_num_steps)
+    print('creating dataset...')
     train_dataloader, val_dataloader = create_dataloaders(args.dataset_size, 10_000, device=device, task=partial_task)
     step_eval = list(range(0, 1000, 10))
-    hist, probing_results = train_loop(toy_bert_model, train_dataloader, val_dataloader, 
-                                      optimizer, num_epochs, 
-                                      step_eval=step_eval, name=None)#'pos_model')
+    print('training...')
+    hist, probing_results = train_loop(toy_bert_model, train_dataloader, val_dataloader, \
+                                        optimizer, num_epochs, \
+                                        step_eval=step_eval, name=None)#'pos_model')
     
+    print('saving results...')
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
     with open(os.path.join(output_dir, "hist.yaml"), "w") as f:
@@ -487,6 +470,21 @@ def main(args):
         
     val_stats = val_loop(toy_bert_model, val_dataloader)
     print(val_stats) # 10 - 80 identical, 10 - 20 1 token diff, 20 - 80 2 token diff
+    
+    df = pd.DataFrame(probing_results)
+    df = df.transpose()
+    df.columns = step_eval[:-1]
+
+    df = df[::-1]
+
+    ax = sns.heatmap(df, annot=False)
+
+    ax.set_xlabel("Step")
+    ax.set_ylabel("Layer")
+    ax.set_title("POS Probing")
+    plt.savefig(os.path.join(output_dir, 'pos_probing_steps.png'))
+
+    plt.show()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train a model on a toy task')

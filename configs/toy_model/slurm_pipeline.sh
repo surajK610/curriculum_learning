@@ -26,12 +26,10 @@ curr_layer=${num_layers[$layer_index]}
 curr_vocab=${vocab_sizes[$vocab_index]}
 curr_a=${a_s[$a_index]}
 
-python3 $EXPERIMENT_SRC_DIR/toy_model.py \
-  --hidden_num_layers $curr_layer \
-  --vocab_size $curr_vocab \
-  --a $curr_a \
-  --sample_func "zipfian" \
-  --output_dir "outputs/toy_model/layer_$curr_layer-vs_$curr_vocab-a_$curr_a" \
+echo "Running with layer: $curr_layer, vocab: $curr_vocab, a: $curr_a"
+python3 $EXPERIMENT_SRC_DIR/toy_model.py --hidden_num_layers $curr_layer --vocab_size $curr_vocab --a $curr_a --sample_func "zipfian" --output_dir "outputs/toy_model/layer_$curr_layer-vs_$curr_vocab-a_$curr_a"
+
+
 
 
 
