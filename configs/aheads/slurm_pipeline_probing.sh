@@ -19,8 +19,8 @@ export DATASET=aheads
 # module load python cuda
 source $LEARNING_DYNAMICS_HOME/venv/bin/activate
 
-# steps=(0 20 40 60 80 100 200 1000 1400 1600 1800 2000)
-steps=(120 140 160 180 300 400 500 600 700 800 900 1200)
+steps=(0 20 40 60 80 100 200 1000 1400 1600 1800 2000)
+# steps=(120 140 160 180 300 400 500 600 700 800 900 1200)
 
 # steps=(0 1 2 4 8 16 32 64 128 256 512 1000 2000 4000 8000 16000 32000 64000 128000 143000)
 types=(induction_head previous_token_head duplicate_token_head)

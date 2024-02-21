@@ -58,6 +58,6 @@ python3 src/collate_metrics.py --exp duplicate_token_head --dataset aheads --met
 for i in {0..11}; do python3 src/collate_metrics.py --exp induction_head --dataset aheads --metric "Val Acc" --resid False --plot none --attention-head $i; done
 python3 src/collate_metrics.py --exp induction_head --dataset aheads --metric "Val Acc" --resid False --plot none
 
-python3 scripts/make_multiheatmaps.py --folder_path outputs/aheads/induction_head/components --output_path figures/aheads/induction_head_components_n.png
-python3 scripts/make_multiheatmaps.py --folder_path outputs/aheads/previous_token_head/components --output_path figures/aheads/previous_token_head_components_n.png
-python3 scripts/make_multiheatmaps.py --folder_path outputs/aheads/duplicate_token_head/components --output_path figures/aheads/duplicate_token_head_components_n.png
+python3 scripts/make_multiheatmaps.py --folder_path outputs/aheads/induction_head/components --output_path figures/aheads/induction_head_components.png
+python3 scripts/make_multiheatmaps.py --folder_path outputs/aheads/previous_token_head/components --output_path figures/aheads/previous_token_head_components.png
+python3 scripts/make_multiheatmaps.py --folder_path outputs/aheads/duplicate_token_head/components --output_path figures/aheads/duplicate_token_head_components.png
