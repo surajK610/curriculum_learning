@@ -28,6 +28,7 @@ sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments
 from aheads import create_repeats_dataset
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
+import matplotlib
 from transformers import BertConfig, BertForMaskedLM, AdamW
 
 special_token_dict_pos = {}
@@ -41,7 +42,6 @@ class Probe(nn.Module):
     def __init__(self, num_features: int):
         super().__init__()
         self.body = nn.Linear(num_features, 1, bias=False)
-
     def forward(self, x):
         if isinstance(x, list):
             x, _ = x
@@ -65,7 +65,6 @@ def bin_train_loop(model, train_dataloader, test_dataloader, optimizer, epochs):
             loss.backward()
             optimizer.step()
             pbar.set_postfix(**stats)
-            
         model.eval()
         with torch.no_grad():
             pbar.set_description("Validation")
@@ -103,6 +102,7 @@ def uniform(type='noun'):
     return random.choice(noun_tokens) if type == 'noun' else random.choice(adj_tokens)
 
 def zipfian(type='noun', a=1.5):
+    # print("A", a)
     assert type in ['noun', 'adj'], "type not found"
     if type == 'noun':
         map = {k:v for k,v in zip(range(len(noun_tokens)), noun_tokens)}
@@ -113,45 +113,45 @@ def zipfian(type='noun', a=1.5):
         value = np.random.zipf(a)
     return map[value]
 
-def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train', sample_func=zipfian, a=1.5):
+def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train', sample_func=zipfian):
     dataset = []
     labels = []
     alt_labels = []
     for _ in range(num_examples):
         rand_val = random.random()
-        if rand_val < 0.40:
+        if rand_val < 0.10: #0.40
             noun = sample_func('noun')
             seq = [special_token_dict_pos['cop'], special_token_dict_pos['null'], noun]
-            if rand_val < 0.20:
+            if rand_val < 0.05: #0.20
                 adj = sample_func('adj')
                 seq.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
                 seq.extend([noun, special_token_dict_pos['null'], noun, noun])
             seq_alt = seq.copy()
-        elif rand_val < 0.80: 
+        elif rand_val < 0.20: #0.80
             noun = sample_func('noun')
             seq = [noun, special_token_dict_pos['cop'], special_token_dict_pos['null']]
-            if rand_val < 0.60:
+            if rand_val < 0.15: #0.60
                 adj = sample_func('adj')
                 seq.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
                 seq.extend([noun, special_token_dict_pos['null'], noun, noun])
             seq_alt = seq.copy()
-        elif rand_val < 0.90: 
+        elif rand_val < 0.60: # 20 - 60  #0.80 
             adj, noun = sample_func('adj'), sample_func('noun')
             seq = [special_token_dict_pos['cop'], adj, noun]
             seq_alt = seq.copy()
-            if rand_val < 0.85:
+            if rand_val < 0.40: #0.75
                 seq.extend([adj, adj, adj, adj])
                 seq_alt.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
                 seq.extend([noun, adj, noun, noun])
                 seq_alt.extend([noun, special_token_dict_pos['null'], noun, noun])
-        else:
+        else: # 60-100
             adj, noun = sample_func('adj'), sample_func('noun')
             seq = [noun, special_token_dict_pos['cop'], adj]
             seq_alt = seq.copy()
-            if rand_val < 0.95:
+            if rand_val < 0.80: #0.95
                 seq.extend([adj, adj, adj, adj])
                 seq_alt.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
@@ -260,20 +260,17 @@ def create_dataset_task_dep(num_examples, mask_probability=0.15, masking='train'
 def create_dataloaders(num_train, num_val, device="cpu", task=create_dataset_task_pos, batch_size=128):
     inputs_t, labels_t, alt_labels_t = task(num_train, mask_probability=0.15, masking='test')
     inputs_v, labels_v, alt_labels_v = task(num_val, mask_probability=0, masking='test')
-
+    # print(inputs_t[:5], labels_t[:5], alt_labels_t[:5])
     inputs_t = torch.tensor(inputs_t).to(device)
     labels_t = torch.tensor(labels_t).to(device)
     alt_labels_t = torch.tensor(alt_labels_t).to(device)
     inputs_v = torch.tensor(inputs_v).to(device)
     labels_v = torch.tensor(labels_v).to(device)
     alt_labels_v = torch.tensor(alt_labels_v).to(device)
-
     train_dataset = TensorDataset(inputs_t.detach(), labels_t, alt_labels_t)
     val_dataset = TensorDataset(inputs_v.detach(), labels_v, alt_labels_v)
-    
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-    
     return train_dataloader, val_dataloader
 
 def create_dataloaders_bin(data, labels, device="cpu"):
@@ -282,65 +279,54 @@ def create_dataloaders_bin(data, labels, device="cpu"):
     inputs_v, labels_v = data[train_len:], labels[train_len:]
     train_dataset = TensorDataset(inputs_t.detach(), labels_t.view(-1, 1))
     val_dataset = TensorDataset(inputs_v.detach(), labels_v.view(-1, 1))
-
     train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=0)
     val_dataloader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=0)
-    
     return train_dataloader, val_dataloader
 
 def pca_pos(model, val_dataloader, title, c_step, probe_results=defaultdict(list), device="cpu", output_dir=None, plot=True):
     labels, hidden_layers = [], defaultdict(list)
     model.config.output_hidden_states=True
     num_hidden_states = model.config.num_hidden_layers + 1
+    adj_min = min(adj_tokens)
     if plot:
       fig, axs = plt.subplots(1, num_hidden_states, figsize=(5*num_hidden_states, 5))
-    
     for batch in val_dataloader:
         examples, _, _ = batch
-        labels.append((examples[:, -4] < 50).float())
+        labels.append((examples[:, -4] < adj_min).float())
         with torch.no_grad():
-            outputs = model(examples.to(device))
+            outputs = model(examples.to(model.device))
         for j in range(num_hidden_states):
             hidden_layers[j].append(outputs.hidden_states[j][:, -4, :])
-    
     labels = torch.concat(labels, axis=0).unsqueeze(1)
     for i in range(num_hidden_states):
         torch_embed = torch.concat(hidden_layers[i], axis=0).squeeze()
         probe = Probe(torch_embed.shape[1]).to(model.device)
         train_dataloader_bin, val_dataloader_bin = create_dataloaders_bin(torch_embed, labels, device=model.device)
         optim_bin = torch.optim.AdamW(probe.parameters(), lr=1e-3) 
-        
         results = bin_train_loop(probe, train_dataloader_bin, val_dataloader_bin, optim_bin, 3)
         probe_results[i].append(results['acc'])
         if plot:
-          
           labels_numpy = labels.cpu().numpy().squeeze()
           np_embed = torch_embed.cpu().numpy()
-          
           pca = PCA(n_components=2)
           data_pca = pca.fit_transform(np_embed)
-          
-          
           unique_labels = np.unique(labels_numpy)
-          colors = plt.cm.get_cmap('viridis', len(unique_labels))
-          
+          colors = matplotlib.colormaps.get_cmap('viridis').colors[:len(unique_labels)]
           for j, label in enumerate(unique_labels):
               axs[i].scatter(data_pca[labels_numpy == label, 0], data_pca[labels_numpy == label, 1], 
-                          alpha=0.5, color=colors(j), label=f"Label {label}")
-          
+                          alpha=0.5, color=colors[j], label=f"Label {label}")
           axs[i].set_title(f"state {i} acc={results['acc']:0.2f}")
           axs[i].set_xlabel("Principal Component 1")
           axs[i].set_ylabel("Principal Component 2")
           axs[i].legend()
           axs[i].grid(True)
-    
     if plot:           
       plt.suptitle(title)
       if output_dir is not None:
         os.makedirs(output_dir, exist_ok=True)
         plt.savefig(os.path.join(output_dir,f'/pca_step_{c_step}.png'))
       plt.show()
-    
+    plt.close()
     return probe_results
 
 def step(model, batch, hard_acc=False, criterion=nn.CrossEntropyLoss()):
@@ -349,12 +335,9 @@ def step(model, batch, hard_acc=False, criterion=nn.CrossEntropyLoss()):
     logits = output.logits.transpose(1, 2)
     loss = criterion(logits, y)
     batch_len = logits.shape[0]
-
     where = (y != -100)
     y, alt_y = y[where].view(batch_len, -1), alt_y[where].view(batch_len, -1)
-    
     preds = logits.argmax(axis=1)[where].view(batch_len, -1)
-    
     ## full examples where alt != alt_label
     batch_same = (y == alt_y).all(axis=-1)
     if hard_acc:
@@ -363,7 +346,6 @@ def step(model, batch, hard_acc=False, criterion=nn.CrossEntropyLoss()):
     else:
         acc = (preds == y)[~batch_same].float().mean() 
         alt_acc = (preds == alt_y)[~batch_same].float().mean()
-    
     return loss, {"loss": loss.item(), "acc": acc.item(), "alt_acc": alt_acc.item()}
 
 def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step_eval=1000, name=None, pca=True):
@@ -375,6 +357,8 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
     for epoch in pbar:
         pbar.set_description(f"Training Epoch {epoch}")
         for batch in train_dataloader:
+            sys.stdout.flush()
+            sys.stderr.flush()
             c_step += 1
             model.train()
             optimizer.zero_grad()
@@ -387,7 +371,7 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
                 if c_step % step_eval == 0:
                     hist[c_step] = val_loop(model, test_dataloader)
                     if pca:
-                        probe_results = pca_pos(model, test_dataloader, f'Step {c_step}', c_step, probe_results, device=model.device)
+                        probe_results = pca_pos(model, test_dataloader, f'Step {c_step}', c_step, probe_results)
                     if name is not None:
                         torch.save(model.state_dict(), f'models/{name}_step_{c_step}.pth')
             elif isinstance(step_eval, list):
@@ -399,8 +383,6 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
                         torch.save(model.state_dict(), f'models/{name}_step_{c_step}.pth')
             else:
                 raise ValueError('Not recognized format for step')
-                
-                
         model.eval()
         with torch.no_grad():
             pbar.set_description("Validation")
@@ -423,8 +405,6 @@ def val_loop(model, test_dataloader):
             pbar.set_postfix(**results)
     return results
 
-
-
 def main(args):
     num_epochs = args.epochs
     batch_size = args.batch_size
@@ -439,42 +419,41 @@ def main(args):
     torch.backends.cudnn.benchmark = False
     
     config = BertConfig(
-        vocab_size=103 if task==create_dataset_task_pos else 401,
+        vocab_size=args.vocab_size+3 if task==create_dataset_task_pos else 401,
         hidden_size=16, # 128  
-        num_hidden_layers=8,  
-        num_attention_heads=2, # 8
+        num_hidden_layers=args.hidden_num_layers, # 8
+        num_attention_heads=args.num_attention_heads, # 8
         intermediate_size=32 # 512
     )
-    sample_func = zipfian if args.sample_func == 'zipfian' else uniform
-    partial_task = partial(task, a=args.a, sample_func=sample_func) if task==create_dataset_task_pos else task
+    sample_func = lambda type: zipfian(type, a=args.a) if args.sample_func == 'zipfian' else lambda type: uniform(type)
+    partial_task = partial(task, sample_func=sample_func) if task==create_dataset_task_pos else task
     toy_bert_model = BertForMaskedLM(config).to(device)
     optimizer = torch.optim.AdamW(toy_bert_model.parameters(), lr=5e-5) 
-    
     max_num_steps = args.dataset_size *  num_epochs/batch_size
-    print('Max number of steps is ', max_num_steps)
-    print('creating dataset...')
+    print('Max number of steps is ', max_num_steps, flush=True)
+    print('creating dataset...', flush=True)
     train_dataloader, val_dataloader = create_dataloaders(args.dataset_size, 10_000, device=device, task=partial_task)
-    step_eval = list(range(0, 1000, 10))
-    print('training...')
+    # torch.save(train_dataloader.dataset.tensors[0], 'train_dataloader0.pth')
+    # step_eval = list(range(0, 1010, 10)) + [1200, 1400, 1600, 1800, 2000, 2400, 3200, 4000, 6000, 8000, 16000, 28000]
+    step_eval = list(range(0, 1000, 10)) + list(range(1000, 16000, 100))
+    print('training...', flush=True)
     hist, probing_results = train_loop(toy_bert_model, train_dataloader, val_dataloader, \
                                         optimizer, num_epochs, \
                                         step_eval=step_eval, name=None)#'pos_model')
-    
-    print('saving results...')
+    print('saving results...', flush=True)
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
-    with open(os.path.join(output_dir, "hist.yaml"), "w") as f:
-        yaml.dump(hist, f)
-    with open(os.path.join(output_dir, "probing_results.yaml"), "w") as f:
-        yaml.dump(probing_results, f)
-        
+    
     val_stats = val_loop(toy_bert_model, val_dataloader)
     print(val_stats) # 10 - 80 identical, 10 - 20 1 token diff, 20 - 80 2 token diff
     
+    hist_df = pd.DataFrame(hist)
+    hist_df.to_csv(os.path.join(output_dir, 'hist.csv'))
+    
     df = pd.DataFrame(probing_results)
     df = df.transpose()
-    df.columns = step_eval[:-1]
-
+    df.to_csv(os.path.join(output_dir, 'pos_probing_results.csv'))
+    df.columns = step_eval[:len(df.columns)]
     df = df[::-1]
 
     ax = sns.heatmap(df, annot=False)
@@ -499,7 +478,7 @@ if __name__ == "__main__":
     parser.add_argument('--intermediate_size', type=int, default=32, help='Intermediate size of the model')
     parser.add_argument('--lr', type=float, default=5e-5, help='Learning rate')
     parser.add_argument('--output_dir', type=str, default='models', help='Output directory')
-    parser.add_argument('--vocab_size', type=int, default=103, help='Vocab size of the model')
+    parser.add_argument('--vocab_size', type=int, default=100, help='Vocab size of the model')
     parser.add_argument('--a', type=float, default=1.5, help='Zipfian parameter')
     parser.add_argument('--sample_func', type=str, default='zipfian', help='Sampling function')
     args = parser.parse_args()
