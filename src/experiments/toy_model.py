@@ -119,29 +119,29 @@ def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train'
     alt_labels = []
     for _ in range(num_examples):
         rand_val = random.random()
-        if rand_val < 0.10: #0.40
-            noun = sample_func('noun')
-            seq = [special_token_dict_pos['cop'], special_token_dict_pos['null'], noun]
-            if rand_val < 0.05: #0.20
-                adj = sample_func('adj')
-                seq.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
-            else:
-                seq.extend([noun, special_token_dict_pos['null'], noun, noun])
-            seq_alt = seq.copy()
-        elif rand_val < 0.20: #0.80
-            noun = sample_func('noun')
-            seq = [noun, special_token_dict_pos['cop'], special_token_dict_pos['null']]
-            if rand_val < 0.15: #0.60
-                adj = sample_func('adj')
-                seq.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
-            else:
-                seq.extend([noun, special_token_dict_pos['null'], noun, noun])
-            seq_alt = seq.copy()
-        elif rand_val < 0.60: # 20 - 60  #0.80 
+        # if rand_val < 0.10: #0.40
+        #     noun = sample_func('noun')
+        #     seq = [special_token_dict_pos['cop'], special_token_dict_pos['null'], noun]
+        #     if rand_val < 0.05: #0.20
+        #         adj = sample_func('adj')
+        #         seq.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
+        #     else:
+        #         seq.extend([noun, special_token_dict_pos['null'], noun, noun])
+        #     seq_alt = seq.copy()
+        # elif rand_val < 0.20: #0.80
+        #     noun = sample_func('noun')
+        #     seq = [noun, special_token_dict_pos['cop'], special_token_dict_pos['null']]
+        #     if rand_val < 0.15: #0.60
+        #         adj = sample_func('adj')
+        #         seq.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
+        #     else:
+        #         seq.extend([noun, special_token_dict_pos['null'], noun, noun])
+        #     seq_alt = seq.copy()
+        if rand_val < 0.50: # 20 - 60  #0.80 
             adj, noun = sample_func('adj'), sample_func('noun')
             seq = [special_token_dict_pos['cop'], adj, noun]
             seq_alt = seq.copy()
-            if rand_val < 0.40: #0.75
+            if rand_val < 0.25: #0.75
                 seq.extend([adj, adj, adj, adj])
                 seq_alt.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
@@ -151,7 +151,7 @@ def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train'
             adj, noun = sample_func('adj'), sample_func('noun')
             seq = [noun, special_token_dict_pos['cop'], adj]
             seq_alt = seq.copy()
-            if rand_val < 0.80: #0.95
+            if rand_val < 0.75: #0.95
                 seq.extend([adj, adj, adj, adj])
                 seq_alt.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
