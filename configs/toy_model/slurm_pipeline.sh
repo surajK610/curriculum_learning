@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=toy_model_zipfn
-#SBATCH --output=outputs/toy_model/slurm_out/logzn_%a.out
-#SBATCH --error=outputs/toy_model/slurm_out/logzn_%a.err
-#SBATCH --array=0-8%9
+#SBATCH --output=outputs/toy_model/slurm_out/logz_%a.out
+#SBATCH --error=outputs/toy_model/slurm_out/logz_%a.err
+#SBATCH --array=0-11%12
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
 
@@ -19,23 +19,23 @@ source $LEARNING_DYNAMICS_HOME/venv/bin/activate
 # a_s=(1.0001 1.2 1.5)
 
 num_layers=(6)
-vocab_sizes=(100 1000 10000)
+vocab_sizes=(100 1000 10000 20000)
 a_s=(1.0001 1.2 1.5)
 
 # layer_index=$((SLURM_ARRAY_TASK_ID % 9 / 3))
 # vocab_index=$((SLURM_ARRAY_TASK_ID % 3))
 # a_index=$((SLURM_ARRAY_TASK_ID / 9))
 
-layer_index=$((SLURM_ARRAY_TASK_ID / 9))
-vocab_index=$((SLURM_ARRAY_TASK_ID % 3))
-a_index=$((SLURM_ARRAY_TASK_ID / 3))
+layer_index=$((SLURM_ARRAY_TASK_ID / 12))
+vocab_index=$((SLURM_ARRAY_TASK_ID % 4))
+a_index=$((SLURM_ARRAY_TASK_ID / 4))
 
 curr_layer=${num_layers[$layer_index]}
 curr_vocab=${vocab_sizes[$vocab_index]}
 curr_a=${a_s[$a_index]}
 
 echo "Running with layer: $curr_layer, vocab: $curr_vocab, a: $curr_a"
-python3 $EXPERIMENT_SRC_DIR/toy_model.py --hidden_num_layers $curr_layer --vocab_size $curr_vocab --a $curr_a --sample_func "zipfian" --output_dir "outputs/toy_model/zipfn-layer_$curr_layer-vs_$curr_vocab-a_$curr_a"
+python3 $EXPERIMENT_SRC_DIR/toy_model.py --hidden_num_layers $curr_layer --vocab_size $curr_vocab --a $curr_a --sample_func "zipfian" --output_dir "outputs/toy_model/zipf-layer_$curr_layer-vs_$curr_vocab-a_$curr_a"
 
 
 
