@@ -84,7 +84,7 @@ def bin_val_loop(model, test_dataloader):
             pbar.set_postfix(**results)
     return results
   
-def parameterize_pos_vocab(num_pos_tokens):
+def parameterize_pos_vocab_old(num_pos_tokens):
   assert num_pos_tokens % 2 == 0, "Has to be even"
   global special_token_dict_pos
   global noun_tokens
@@ -96,27 +96,33 @@ def parameterize_pos_vocab(num_pos_tokens):
   }
   noun_tokens = range(num_pos_tokens//2)
   adj_tokens = range(num_pos_tokens//2, num_pos_tokens)
+  
+def parameterize_pos_vocab(num_pos_tokens):
+  assert num_pos_tokens % 2 == 0, "Has to be even"
+  global special_token_dict_pos
+  global noun_tokens
+  global adj_tokens
+  special_token_dict_pos = {
+      'cop': num_pos_tokens,
+      'mask': num_pos_tokens+1
+  }
+  noun_tokens = range(num_pos_tokens//2)
+  adj_tokens = range(num_pos_tokens//2, num_pos_tokens)
 
-def tail_end_z(type='noun', switch=False):
+def tail_end_z(type='noun'):
     assert type in ['noun', 'adj'], "type not found"
-    if switch:
-        type = 'noun' if type == 'adj' else 'adj'
     n_nouns, n_adjs = len(noun_tokens),len(adj_tokens)
     bot10_nouns, bot10_adjs = noun_tokens[-n_nouns//10:], adj_tokens[-n_adjs//10:] 
     # only works because probability monotonically decreasing in zipfian as token identity increases
     return random.choice(bot10_nouns) if type == 'noun' else random.choice(bot10_adjs)
 
-def uniform(type='noun', switch=False):
+def uniform(type='noun'):
     assert type in ['noun', 'adj'], "type not found"
-    if switch:
-        type = 'noun' if type == 'adj' else 'adj'
     return random.choice(noun_tokens) if type == 'noun' else random.choice(adj_tokens)
 
-def zipfian(type='noun', a=1.5, switch=False):
+def zipfian(type='noun', a=1.5):
     # print("A", a)
     assert type in ['noun', 'adj'], "type not found"
-    if switch:
-        type = 'noun' if type == 'adj' else 'adj'
     if type == 'noun':
         map = {k:v for k,v in zip(range(len(noun_tokens)), noun_tokens)}
     else:
@@ -130,29 +136,32 @@ def create_dataset_task_pos_old(num_examples, mask_probability=0.15, masking='tr
     dataset = []
     labels = []
     alt_labels = []
+    if switch:
+        sample_func = lambda type: sample_func('noun') if type == 'adj' else sample_func('adj')
+        tail_end_z = lambda type: tail_end_z('noun') if type == 'adj' else tail_end_z('adj')
     for _ in range(num_examples):
         rand_val = random.random()
         if rand_val < 0.10: #0.40
-            noun = sample_func('noun', switch=switch) if not tail_end else tail_end_z('noun', switch=switch)
+            noun = sample_func('noun') if not tail_end else tail_end_z('noun')
             seq = [special_token_dict_pos['cop'], special_token_dict_pos['null'], noun]
             if rand_val < 0.05: #0.20
-                adj = sample_func('adj', switch=switch) if not tail_end else tail_end_z('adj', switch=switch)
+                adj = sample_func('adj') if not tail_end else tail_end_z('adj')
                 seq.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
                 seq.extend([noun, special_token_dict_pos['null'], noun, noun])
             seq_alt = seq.copy()
         elif rand_val < 0.20: #0.80
-            noun = sample_func('noun', switch=switch) if not tail_end else tail_end_z('noun', switch=switch)
+            noun = sample_func('noun') if not tail_end else tail_end_z('noun', )
             seq = [noun, special_token_dict_pos['cop'], special_token_dict_pos['null']]
             if rand_val < 0.15: #0.60
-                adj = sample_func('adj', switch=switch) if not tail_end else tail_end_z('adj', switch=switch)
+                adj = sample_func('adj') if not tail_end else tail_end_z('adj')
                 seq.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
                 seq.extend([noun, special_token_dict_pos['null'], noun, noun])
             seq_alt = seq.copy()
         
         if rand_val < 0.60: # 20 - 60  #0.80 
-            adj, noun = sample_func('adj', switch=switch) if not tail_end else tail_end_z('adj', switch=switch), sample_func('noun', switch=switch) if not tail_end else tail_end_z('noun', switch=switch)
+            adj, noun = sample_func('adj') if not tail_end else tail_end_z('adj'), sample_func('noun') if not tail_end else tail_end_z('noun')
             seq = [special_token_dict_pos['cop'], adj, noun]
             seq_alt = seq.copy()
             if rand_val < 0.40: #0.75
@@ -162,7 +171,7 @@ def create_dataset_task_pos_old(num_examples, mask_probability=0.15, masking='tr
                 seq.extend([noun, adj, noun, noun])
                 seq_alt.extend([noun, special_token_dict_pos['null'], noun, noun])
         else: # 60-100
-            adj, noun = sample_func('adj', switch=switch) if not tail_end else tail_end_z('adj', switch=switch), sample_func('noun', switch=switch)  if not tail_end else tail_end_z('noun', switch=switch)
+            adj, noun = sample_func('adj') if not tail_end else tail_end_z('adj'), sample_func('noun')  if not tail_end else tail_end_z('noun')
             seq = [noun, special_token_dict_pos['cop'], adj]
             seq_alt = seq.copy()
             if rand_val < 0.80: #0.95
@@ -192,52 +201,40 @@ def create_dataset_task_pos_old(num_examples, mask_probability=0.15, masking='tr
         alt_labels.append(alt_labels_seq)
     return dataset, labels, alt_labels
 
-def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train', sample_func=zipfian, tail_end=False, switch=False):
+def create_dataset_task_pos(num_examples, sample_func=zipfian, tail_end_z = tail_end_z, tail_end=False, switch=False):
     dataset = []
     labels = []
-    alt_labels = []
+    if switch:
+        sample_func = lambda type: sample_func('noun') if type == 'adj' else sample_func('adj')
+        tail_end_z = lambda type: tail_end_z('noun') if type == 'adj' else tail_end_z('adj')
+        
     for _ in range(num_examples):
         rand_val = random.random()
         if rand_val < 0.50: # 20 - 60  #0.80 
-            adj, noun = sample_func('adj', switch=switch) if not tail_end else tail_end_z('adj', switch=switch), sample_func('noun', switch=switch) if not tail_end else tail_end_z('noun', switch=switch)
+            adj, noun = sample_func('adj') if not tail_end else tail_end_z('adj'), sample_func('noun') if not tail_end else tail_end_z('noun')
             seq = [special_token_dict_pos['cop'], adj, noun]
-            seq_alt = seq.copy()
             if rand_val < 0.25: #0.75
                 seq.extend([adj, adj, adj, adj])
-                seq_alt.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
                 seq.extend([noun, adj, noun, noun])
-                seq_alt.extend([noun, special_token_dict_pos['null'], noun, noun])
         else: # 60-100
-            adj, noun = sample_func('adj', switch=switch) if not tail_end else tail_end_z('adj', switch=switch), sample_func('noun', switch=switch)  if not tail_end else tail_end_z('noun', switch=switch)
+            adj, noun = sample_func('adj') if not tail_end else tail_end_z('adj'), sample_func('noun')  if not tail_end else tail_end_z('noun')
             seq = [noun, special_token_dict_pos['cop'], adj]
-            seq_alt = seq.copy()
             if rand_val < 0.75: #0.95
                 seq.extend([adj, adj, adj, adj])
-                seq_alt.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
                 seq.extend([noun, adj, noun, noun])
-                seq_alt.extend([noun, special_token_dict_pos['null'], noun, noun])
         label_seq = seq.copy()
-        alt_labels_seq = seq_alt.copy()
-        if masking=='train':
-            for i in range(len(seq)):
-                if random.random() < mask_probability:
-                    seq[i] = special_token_dict_pos['mask']
-                else:
-                    label_seq[i] = -100 # ignore in loss fxn
-                    alt_labels_seq[i] = -100
-        else:
-            for i in range(len(seq)):
-                if i >= len(seq) - 3:
-                    seq[i] = special_token_dict_pos['mask']
-                else:
-                    label_seq[i] = -100
-                    alt_labels_seq[i] = -100
+
+        for i in range(len(seq)):
+            if i >= len(seq) - 3:
+                seq[i] = special_token_dict_pos['mask']
+            else:
+                label_seq[i] = -100
+                
         dataset.append(seq)
         labels.append(label_seq)
-        alt_labels.append(alt_labels_seq)
-    return dataset, labels, alt_labels
+    return dataset, labels
 
 def parameterize_dep_vocab(num_dep_tokens=400, len_ex=20):
   global special_token_dict_dep
@@ -318,29 +315,28 @@ def create_dataset_task_dep(num_examples, mask_probability=0.15, masking='train'
     return dataset, labels, alt_labels
   
 def create_dataloaders(num_train, num_val, device="cpu", task=create_dataset_task_pos, batch_size=128):
-    inputs_t, labels_t, alt_labels_t = task(num_train, mask_probability=0.15, masking='test')
-    inputs_v, labels_v, alt_labels_v = task(num_val, mask_probability=0, masking='test')
-    inputs_e, labels_e, alt_labels_e = task(num_val, mask_probability=0, masking='test', tail_end=True)
-    inputs_s, labels_s, alt_labels_s = task(num_val, mask_probability=0, masking='test', switch=True)
+    inputs_t, labels_t = task(num_train)
+    inputs_v, labels_v = task(num_val)
+    inputs_e, labels_e = task(num_val, tail_end=True)
+    inputs_s, labels_s = task(num_val, switch=True)
     
     # print(inputs_t[:5], labels_t[:5], alt_labels_t[:5])
     inputs_t = torch.tensor(inputs_t).to(device)
     labels_t = torch.tensor(labels_t).to(device)
-    alt_labels_t = torch.tensor(alt_labels_t).to(device)
+    
     inputs_v = torch.tensor(inputs_v).to(device)
     labels_v = torch.tensor(labels_v).to(device)
-    alt_labels_v = torch.tensor(alt_labels_v).to(device)
+
     inputs_e = torch.tensor(inputs_e).to(device)
     labels_e = torch.tensor(labels_e).to(device)
-    alt_labels_e = torch.tensor(alt_labels_e).to(device)
+    
     inputs_s = torch.tensor(inputs_s).to(device)
     labels_s = torch.tensor(labels_s).to(device)
-    alt_labels_s = torch.tensor(alt_labels_s).to(device)
     
-    train_dataset = TensorDataset(inputs_t.detach(), labels_t, alt_labels_t)
-    val_dataset = TensorDataset(inputs_v.detach(), labels_v, alt_labels_v)
-    tail_end_val_dataset = TensorDataset(inputs_e.detach(), labels_e, alt_labels_e)
-    switch_val_dataset = TensorDataset(inputs_s.detach(), labels_s, alt_labels_s)
+    train_dataset = TensorDataset(inputs_t.detach(), labels_t)
+    val_dataset = TensorDataset(inputs_v.detach(), labels_v)
+    tail_end_val_dataset = TensorDataset(inputs_e.detach(), labels_e)
+    switch_val_dataset = TensorDataset(inputs_s.detach(), labels_s)
     
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
@@ -404,24 +400,33 @@ def pca_pos(model, val_dataloader, title, c_step, probe_results=defaultdict(list
     plt.close()
     return probe_results
 
-def step(model, batch, hard_acc=False, criterion=nn.CrossEntropyLoss()):
-    x, y, alt_y = batch
+def step(model, batch, hard_acc=False, criterion=nn.CrossEntropyLoss(), alt=False):
+    if alt:
+        x, y, alt_y = batch
+    else:
+        x, y = batch
     output = model.forward(x)
     logits = output.logits.transpose(1, 2)
     loss = criterion(logits, y)
     batch_len = logits.shape[0]
     where = (y != -100)
-    y, alt_y = y[where].view(batch_len, -1), alt_y[where].view(batch_len, -1)
+    y = y[where].view(batch_len, -1)
+    if alt:
+        alt_y = alt_y[where].view(batch_len, -1)
     preds = logits.argmax(axis=1)[where].view(batch_len, -1)
     ## full examples where alt != alt_label
     batch_same = (y == alt_y).all(axis=-1)
     if hard_acc:
         acc = (preds == y).all(axis=-1).float().mean() 
-        alt_acc = (preds == alt_y).all(axis=-1).float().mean()
+        if alt:
+            alt_acc = (preds == alt_y).all(axis=-1).float().mean()
     else:
         acc = (preds == y)[~batch_same].float().mean() 
-        alt_acc = (preds == alt_y)[~batch_same].float().mean()
-    return loss, {"loss": loss.item(), "acc": acc.item(), "alt_acc": alt_acc.item()}
+        if alt:
+            alt_acc = (preds == alt_y)[~batch_same].float().mean()
+    if alt:
+        return loss, {"loss": loss.item(), "acc": acc.item(), "alt_acc": alt_acc.item()}
+    return loss, {"loss": loss.item(), "acc": acc.item()}
 
 def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step_eval=1000, name=None, pca=True):
     tail_end_val_dataloader = None
@@ -523,11 +528,11 @@ def main(args):
     torch.backends.cudnn.benchmark = False
     
     config = BertConfig(
-        vocab_size=args.vocab_size+3 if task==create_dataset_task_pos else 401,
-        hidden_size=16, # 128  
+        vocab_size=args.vocab_size+2 if task==create_dataset_task_pos else 401, ## args.vocab_size+3 if have null token
+        hidden_size=args.hidden_size, # 128  
         num_hidden_layers=args.hidden_num_layers, # 8
         num_attention_heads=args.num_attention_heads, # 8
-        intermediate_size=32 # 512
+        intermediate_size=args.intermediate_size # 512
     )
     sample_func = lambda type: zipfian(type, a=args.a) if args.sample_func == 'zipfian' else lambda type: uniform(type)
     partial_task = partial(task, sample_func=sample_func) if task==create_dataset_task_pos else task
@@ -615,6 +620,7 @@ if __name__ == "__main__":
     parser.add_argument('--dataset_size', type=int, default=5_000_000, help='Size of the dataset')
     parser.add_argument('--hidden_num_layers', type=int, default=8, help='Hidden size of the model')
     parser.add_argument('--num_attention_heads', type=int, default=1, help='Number of attention heads')
+    parser.add_argument('--hidden_size', type=int, default=16, help='Hidden size of the model')
     parser.add_argument('--intermediate_size', type=int, default=32, help='Intermediate size of the model')
     parser.add_argument('--lr', type=float, default=5e-5, help='Learning rate')
     parser.add_argument('--output_dir', type=str, default='models', help='Output directory')
