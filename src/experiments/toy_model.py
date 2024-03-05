@@ -97,20 +97,26 @@ def parameterize_pos_vocab(num_pos_tokens):
   noun_tokens = range(num_pos_tokens//2)
   adj_tokens = range(num_pos_tokens//2, num_pos_tokens)
 
-def tail_end_z(type='noun'):
+def tail_end_z(type='noun', switch=False):
     assert type in ['noun', 'adj'], "type not found"
+    if switch:
+        type = 'noun' if type == 'adj' else 'adj'
     n_nouns, n_adjs = len(noun_tokens),len(adj_tokens)
     bot10_nouns, bot10_adjs = noun_tokens[-n_nouns//10:], adj_tokens[-n_adjs//10:] 
     # only works because probability monotonically decreasing in zipfian as token identity increases
     return random.choice(bot10_nouns) if type == 'noun' else random.choice(bot10_adjs)
 
-def uniform(type='noun'):
+def uniform(type='noun', switch=False):
     assert type in ['noun', 'adj'], "type not found"
+    if switch:
+        type = 'noun' if type == 'adj' else 'adj'
     return random.choice(noun_tokens) if type == 'noun' else random.choice(adj_tokens)
 
-def zipfian(type='noun', a=1.5):
+def zipfian(type='noun', a=1.5, switch=False):
     # print("A", a)
     assert type in ['noun', 'adj'], "type not found"
+    if switch:
+        type = 'noun' if type == 'adj' else 'adj'
     if type == 'noun':
         map = {k:v for k,v in zip(range(len(noun_tokens)), noun_tokens)}
     else:
@@ -120,33 +126,33 @@ def zipfian(type='noun', a=1.5):
         value = np.random.zipf(a)
     return map[value]
 
-def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train', sample_func=zipfian, tail_end=False):
+def create_dataset_task_pos_old(num_examples, mask_probability=0.15, masking='train', sample_func=zipfian, tail_end=False, switch=False):
     dataset = []
     labels = []
     alt_labels = []
     for _ in range(num_examples):
         rand_val = random.random()
         if rand_val < 0.10: #0.40
-            noun = sample_func('noun') if not tail_end else tail_end_z('noun')
+            noun = sample_func('noun', switch=switch) if not tail_end else tail_end_z('noun', switch=switch)
             seq = [special_token_dict_pos['cop'], special_token_dict_pos['null'], noun]
             if rand_val < 0.05: #0.20
-                adj = sample_func('adj') if not tail_end else tail_end_z('adj')
+                adj = sample_func('adj', switch=switch) if not tail_end else tail_end_z('adj', switch=switch)
                 seq.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
                 seq.extend([noun, special_token_dict_pos['null'], noun, noun])
             seq_alt = seq.copy()
         elif rand_val < 0.20: #0.80
-            noun = sample_func('noun') if not tail_end else tail_end_z('noun')
+            noun = sample_func('noun', switch=switch) if not tail_end else tail_end_z('noun', switch=switch)
             seq = [noun, special_token_dict_pos['cop'], special_token_dict_pos['null']]
             if rand_val < 0.15: #0.60
-                adj = sample_func('adj') if not tail_end else tail_end_z('adj')
+                adj = sample_func('adj', switch=switch) if not tail_end else tail_end_z('adj', switch=switch)
                 seq.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
                 seq.extend([noun, special_token_dict_pos['null'], noun, noun])
             seq_alt = seq.copy()
         
         if rand_val < 0.60: # 20 - 60  #0.80 
-            adj, noun = sample_func('adj') if not tail_end else tail_end_z('adj'), sample_func('noun') if not tail_end else tail_end_z('noun')
+            adj, noun = sample_func('adj', switch=switch) if not tail_end else tail_end_z('adj', switch=switch), sample_func('noun', switch=switch) if not tail_end else tail_end_z('noun', switch=switch)
             seq = [special_token_dict_pos['cop'], adj, noun]
             seq_alt = seq.copy()
             if rand_val < 0.40: #0.75
@@ -156,10 +162,57 @@ def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train'
                 seq.extend([noun, adj, noun, noun])
                 seq_alt.extend([noun, special_token_dict_pos['null'], noun, noun])
         else: # 60-100
-            adj, noun = sample_func('adj') if not tail_end else tail_end_z('adj'), sample_func('noun')  if not tail_end else tail_end_z('noun')
+            adj, noun = sample_func('adj', switch=switch) if not tail_end else tail_end_z('adj', switch=switch), sample_func('noun', switch=switch)  if not tail_end else tail_end_z('noun', switch=switch)
             seq = [noun, special_token_dict_pos['cop'], adj]
             seq_alt = seq.copy()
             if rand_val < 0.80: #0.95
+                seq.extend([adj, adj, adj, adj])
+                seq_alt.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
+            else:
+                seq.extend([noun, adj, noun, noun])
+                seq_alt.extend([noun, special_token_dict_pos['null'], noun, noun])
+        label_seq = seq.copy()
+        alt_labels_seq = seq_alt.copy()
+        if masking=='train':
+            for i in range(len(seq)):
+                if random.random() < mask_probability:
+                    seq[i] = special_token_dict_pos['mask']
+                else:
+                    label_seq[i] = -100 # ignore in loss fxn
+                    alt_labels_seq[i] = -100
+        else:
+            for i in range(len(seq)):
+                if i >= len(seq) - 3:
+                    seq[i] = special_token_dict_pos['mask']
+                else:
+                    label_seq[i] = -100
+                    alt_labels_seq[i] = -100
+        dataset.append(seq)
+        labels.append(label_seq)
+        alt_labels.append(alt_labels_seq)
+    return dataset, labels, alt_labels
+
+def create_dataset_task_pos(num_examples, mask_probability=0.15, masking='train', sample_func=zipfian, tail_end=False, switch=False):
+    dataset = []
+    labels = []
+    alt_labels = []
+    for _ in range(num_examples):
+        rand_val = random.random()
+        if rand_val < 0.50: # 20 - 60  #0.80 
+            adj, noun = sample_func('adj', switch=switch) if not tail_end else tail_end_z('adj', switch=switch), sample_func('noun', switch=switch) if not tail_end else tail_end_z('noun', switch=switch)
+            seq = [special_token_dict_pos['cop'], adj, noun]
+            seq_alt = seq.copy()
+            if rand_val < 0.25: #0.75
+                seq.extend([adj, adj, adj, adj])
+                seq_alt.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
+            else:
+                seq.extend([noun, adj, noun, noun])
+                seq_alt.extend([noun, special_token_dict_pos['null'], noun, noun])
+        else: # 60-100
+            adj, noun = sample_func('adj', switch=switch) if not tail_end else tail_end_z('adj', switch=switch), sample_func('noun', switch=switch)  if not tail_end else tail_end_z('noun', switch=switch)
+            seq = [noun, special_token_dict_pos['cop'], adj]
+            seq_alt = seq.copy()
+            if rand_val < 0.75: #0.95
                 seq.extend([adj, adj, adj, adj])
                 seq_alt.extend([adj, special_token_dict_pos['null'], special_token_dict_pos['null'], special_token_dict_pos['null']])
             else:
@@ -267,7 +320,9 @@ def create_dataset_task_dep(num_examples, mask_probability=0.15, masking='train'
 def create_dataloaders(num_train, num_val, device="cpu", task=create_dataset_task_pos, batch_size=128):
     inputs_t, labels_t, alt_labels_t = task(num_train, mask_probability=0.15, masking='test')
     inputs_v, labels_v, alt_labels_v = task(num_val, mask_probability=0, masking='test')
-    inputs_e, labels_e, alt_labels_e = task(num_val, mask_probability=0, masking='train', tail_end=True)
+    inputs_e, labels_e, alt_labels_e = task(num_val, mask_probability=0, masking='test', tail_end=True)
+    inputs_s, labels_s, alt_labels_s = task(num_val, mask_probability=0, masking='test', switch=True)
+    
     # print(inputs_t[:5], labels_t[:5], alt_labels_t[:5])
     inputs_t = torch.tensor(inputs_t).to(device)
     labels_t = torch.tensor(labels_t).to(device)
@@ -278,15 +333,20 @@ def create_dataloaders(num_train, num_val, device="cpu", task=create_dataset_tas
     inputs_e = torch.tensor(inputs_e).to(device)
     labels_e = torch.tensor(labels_e).to(device)
     alt_labels_e = torch.tensor(alt_labels_e).to(device)
+    inputs_s = torch.tensor(inputs_s).to(device)
+    labels_s = torch.tensor(labels_s).to(device)
+    alt_labels_s = torch.tensor(alt_labels_s).to(device)
     
     train_dataset = TensorDataset(inputs_t.detach(), labels_t, alt_labels_t)
     val_dataset = TensorDataset(inputs_v.detach(), labels_v, alt_labels_v)
     tail_end_val_dataset = TensorDataset(inputs_e.detach(), labels_e, alt_labels_e)
+    switch_val_dataset = TensorDataset(inputs_s.detach(), labels_s, alt_labels_s)
     
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
     tail_end_val_dataloader = DataLoader(tail_end_val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-    return train_dataloader, val_dataloader, tail_end_val_dataloader
+    switch_dataloader = DataLoader(switch_val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    return train_dataloader, val_dataloader, tail_end_val_dataloader, switch_dataloader
 
 def create_dataloaders_bin(data, labels, device="cpu"):
     train_len = int(0.80 * len(data))
@@ -366,15 +426,22 @@ def step(model, batch, hard_acc=False, criterion=nn.CrossEntropyLoss()):
 def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step_eval=1000, name=None, pca=True):
     tail_end_val_dataloader = None
     if isinstance(test_dataloader, tuple):
-        test_dataloader, tail_end_val_dataloader = test_dataloader
+        if len(test_dataloader) == 3:
+            test_dataloader, tail_end_val_dataloader, switch_val_dataloader = test_dataloader
+        elif len(test_dataloader) == 2:
+            test_dataloader, tail_end_val_dataloader = test_dataloader
+        else:
+            raise ValueError('Not recognized format for test_dataloader order/length')
         
     pbar = tqdm(range(epochs))
     val_stats = {}
     hist = {}
     hist_tail = {}
+    hist_switch = {}
     c_step = 0
     probe_results = defaultdict(list)
     probe_results_tail = defaultdict(list)
+    probe_results_switch = defaultdict(list)
     for epoch in pbar:
         pbar.set_description(f"Training Epoch {epoch}")
         for batch in train_dataloader:
@@ -393,10 +460,14 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
                     hist[c_step] = val_loop(model, test_dataloader)
                     if tail_end_val_dataloader is not None:
                         hist_tail[c_step] = val_loop(model, tail_end_val_dataloader)
+                    if switch_val_dataloader is not None:
+                        hist_switch[c_step] = val_loop(model, switch_val_dataloader)
                     if pca:
                         probe_results = pca_pos(model, test_dataloader, f'Step {c_step}', c_step, probe_results)
                         if tail_end_val_dataloader is not None:
                             probe_results_tail = pca_pos(model, tail_end_val_dataloader, f'Step {c_step}', c_step, probe_results_tail)
+                        if switch_val_dataloader is not None:
+                            probe_results_switch = pca_pos(model, switch_val_dataloader, f'Step {c_step}', c_step, probe_results_switch)
                     if name is not None:
                         torch.save(model.state_dict(), f'models/{name}_step_{c_step}.pth')
             elif isinstance(step_eval, list):
@@ -404,10 +475,14 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
                     hist[c_step] = val_loop(model, test_dataloader)
                     if tail_end_val_dataloader is not None:
                         hist_tail[c_step] = val_loop(model, tail_end_val_dataloader)
+                    if switch_val_dataloader is not None:
+                        hist_switch[c_step] = val_loop(model, switch_val_dataloader)
                     if pca:
                         probe_results = pca_pos(model, test_dataloader, f'Step {c_step}', c_step, probe_results)
                         if tail_end_val_dataloader is not None:
                             probe_results_tail = pca_pos(model, tail_end_val_dataloader, f'Step {c_step}', c_step, probe_results_tail)
+                        if switch_val_dataloader is not None:
+                            probe_results_switch = pca_pos(model, switch_val_dataloader, f'Step {c_step}', c_step, probe_results_switch)
                     if name is not None:
                         torch.save(model.state_dict(), f'models/{name}_step_{c_step}.pth')
             else:
@@ -418,7 +493,7 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
             val_stats = val_loop(model, test_dataloader)
             val_stats = {"val_" + key:val for key,val in val_stats.items()}
             pbar.set_postfix(**val_stats)
-    return hist, probe_results, hist_tail, probe_results_tail
+    return hist, probe_results, hist_tail, probe_results_tail, hist_switch, probe_results_switch
                 
 def val_loop(model, test_dataloader):
     model.eval()
@@ -461,12 +536,12 @@ def main(args):
     max_num_steps = args.dataset_size *  num_epochs/batch_size
     print('Max number of steps is ', max_num_steps, flush=True)
     print('creating dataset...', flush=True)
-    train_dataloader, val_dataloader, tail_end_val_dataloader = create_dataloaders(args.dataset_size, 10_000, device=device, task=partial_task)
+    train_dataloader, val_dataloader, tail_end_val_dataloader, switch_val_dataloader = create_dataloaders(args.dataset_size, 10_000, device=device, task=partial_task)
     # torch.save(train_dataloader.dataset.tensors[0], 'train_dataloader0.pth')
     # step_eval = list(range(0, 1010, 10)) + [1200, 1400, 1600, 1800, 2000, 2400, 3200, 4000, 6000, 8000, 16000, 28000]
-    step_eval = list(range(0, 1000, 10)) + list(range(1000, 16000, 100))
+    step_eval = list(range(0, 1000, 10)) + list(range(1000, 30000, 100))
     print('training...', flush=True)
-    hist, probing_results, hist_tail, probing_results_tail = train_loop(toy_bert_model, train_dataloader, (val_dataloader, tail_end_val_dataloader), \
+    hist, probing_results, hist_tail, probing_results_tail, hist_switch, probing_results_switch = train_loop(toy_bert_model, train_dataloader, (val_dataloader, tail_end_val_dataloader, switch_val_dataloader), \
                                         optimizer, num_epochs, \
                                         step_eval=step_eval, name=None)#'pos_model')
     print('saving results...', flush=True)
@@ -477,12 +552,17 @@ def main(args):
     print("VAL", val_stats) # 10 - 80 identical, 10 - 20 1 token diff, 20 - 80 2 token diff
     tail_stats = val_loop(toy_bert_model, tail_end_val_dataloader)
     print("TAIL VAL", tail_stats)
+    switch_stats = val_loop(toy_bert_model, switch_val_dataloader)
+    print("SWITCH VAL", switch_stats)
     
     hist_df = pd.DataFrame(hist)
     hist_df.to_csv(os.path.join(output_dir, 'hist.csv'))
     
     hist_tail_df = pd.DataFrame(hist_tail)
     hist_tail_df.to_csv(os.path.join(output_dir, 'hist_tail.csv'))
+    
+    hist_switch_df = pd.DataFrame(hist_switch)
+    hist_switch_df.to_csv(os.path.join(output_dir, 'hist_switch.csv'))
     
     df = pd.DataFrame(probing_results)
     df = df.transpose()
@@ -491,25 +571,39 @@ def main(args):
     df.to_csv(os.path.join(output_dir, 'pos_probing_results.csv'))
 
     ax = sns.heatmap(df, annot=False)
-
     ax.set_xlabel("Step")
     ax.set_ylabel("Layer")
     ax.set_title("POS Probing")
     plt.savefig(os.path.join(output_dir, 'pos_probing_steps.png'))
-    plt.show()
+    
     
     df_tail = pd.DataFrame(probing_results_tail)
     df_tail = df_tail.transpose()
     df_tail.columns = step_eval[:len(df_tail.columns)]
     df_tail = df_tail[::-1]
     df_tail.to_csv(os.path.join(output_dir, 'pos_probing_tail_results.csv'))
-    ax = sns.heatmap(df, annot=False)
-
+    
+    plt.figure()
+    ax = sns.heatmap(df_tail, annot=False)
     ax.set_xlabel("Step")
     ax.set_ylabel("Layer")
     ax.set_title("Tail POS Probing")
     plt.savefig(os.path.join(output_dir, 'pos_probing_tail_steps.png'))
-    plt.show()
+    plt.close()
+    
+    df_switch = pd.DataFrame(probing_results_switch)
+    df_switch = df_switch.transpose()
+    df_switch.columns = step_eval[:len(df_switch.columns)]
+    df_switch = df_switch[::-1]
+    df_switch.to_csv(os.path.join(output_dir, 'pos_probing_switch_results.csv'))
+    
+    plt.figure()
+    ax = sns.heatmap(df_switch, annot=False)
+    ax.set_xlabel("Step")
+    ax.set_ylabel("Layer")
+    ax.set_title("Switch POS Probing")
+    plt.savefig(os.path.join(output_dir, 'pos_probing_switch_results.png'))
+    plt.close()
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train a model on a toy task')

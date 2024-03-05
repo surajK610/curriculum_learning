@@ -70,21 +70,22 @@ def generate_heatmaps_unif(folder_path, output_path):
     
 def generate_heatmaps_zipf(folder_path, output_path):
     # step_eval = list(range(0, 1010, 10)) + [1200, 1400, 1600, 1800, 2000, 2400, 3200, 4000, 6000, 8000, 16000, 28000]
-    step_eval = list(range(0, 1000, 10)) + list(range(1000, 16000, 100))
+    # step_eval = list(range(0, 1000, 10)) + list(range(1000, 16000, 100))
     
     root_directory = 'outputs/toy_model/'
     csv_files = []
     for root, dirs, files in os.walk(root_directory):
         if os.path.basename(root).startswith('zipf-'):
             for file in files:
-                if file.endswith('results.csv') and 'old' not in root and 'old_params' not in root:
+                if file.endswith('probing_results.csv') and 'old' not in root and 'old_params' not in root:
                     csv_files.append(os.path.join(root, file))
     
+    # csv_files = [f for f in csv_files if '100-' not in f] ## remove 100- files
     nrows = len(csv_files) // 3 + (len(csv_files) % 3 > 0)
     ncols = 3
 
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(15, 5 * nrows))
-    fig.tight_layout(pad=3.0)
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(15, 3.5 * nrows))
+    fig.tight_layout(pad=5.0)
     vmax = vmin = None
 
     for file in csv_files:
@@ -98,8 +99,8 @@ def generate_heatmaps_zipf(folder_path, output_path):
         df = pd.read_csv(file)
         if 'Unnamed: 0' in df.columns:
             df = df.drop('Unnamed: 0', axis=1)
-        # df = df[::-1]
-        df.columns = step_eval[:len(df.columns)]
+        df.index = df.index[::-1]
+        # df = df[[str(x) for x in list(range(8000, 28000, 1000))]]
         ax = axes[i // ncols, i % ncols]
         sns.heatmap(df, ax=ax) #vmin=vmin, vmax=vmax, cbar=i == len(csv_files) - 1)
         ax.set_title(file.split('/')[2].replace('unif-', ''))  # Set subtitle as file name (without extension)
