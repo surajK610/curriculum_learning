@@ -205,20 +205,23 @@ def create_dataset_task_pos(num_examples, sample_func=zipfian, tail_end_z = tail
     dataset = []
     labels = []
     if switch:
-        sample_func = lambda type: sample_func('noun') if type == 'adj' else sample_func('adj')
-        tail_end_z = lambda type: tail_end_z('noun') if type == 'adj' else tail_end_z('adj')
+        sample_func_upd = lambda type: sample_func('noun') if type == 'adj' else sample_func('adj')
+        tail_end_z_upd = lambda type: tail_end_z('noun') if type == 'adj' else tail_end_z('adj')
+    else:
+        sample_func_upd = sample_func
+        tail_end_z_upd = tail_end_z
         
     for _ in range(num_examples):
         rand_val = random.random()
         if rand_val < 0.50: # 20 - 60  #0.80 
-            adj, noun = sample_func('adj') if not tail_end else tail_end_z('adj'), sample_func('noun') if not tail_end else tail_end_z('noun')
+            adj, noun = sample_func_upd('adj') if not tail_end else tail_end_z_upd('adj'), sample_func_upd('noun') if not tail_end else tail_end_z_upd('noun')
             seq = [special_token_dict_pos['cop'], adj, noun]
             if rand_val < 0.25: #0.75
                 seq.extend([adj, adj, adj, adj])
             else:
                 seq.extend([noun, adj, noun, noun])
         else: # 60-100
-            adj, noun = sample_func('adj') if not tail_end else tail_end_z('adj'), sample_func('noun')  if not tail_end else tail_end_z('noun')
+            adj, noun = sample_func_upd('adj') if not tail_end else tail_end_z_upd('adj'), sample_func_upd('noun')  if not tail_end else tail_end_z_upd('noun')
             seq = [noun, special_token_dict_pos['cop'], adj]
             if rand_val < 0.75: #0.95
                 seq.extend([adj, adj, adj, adj])
@@ -362,7 +365,7 @@ def pca_pos(model, val_dataloader, title, c_step, probe_results=defaultdict(list
     if plot:
       fig, axs = plt.subplots(1, num_hidden_states, figsize=(5*num_hidden_states, 5))
     for batch in val_dataloader:
-        examples, _, _ = batch
+        examples, _ = batch
         labels.append((examples[:, -4] < adj_min).float())
         with torch.no_grad():
             outputs = model(examples.to(model.device))
@@ -400,32 +403,28 @@ def pca_pos(model, val_dataloader, title, c_step, probe_results=defaultdict(list
     plt.close()
     return probe_results
 
-def step(model, batch, hard_acc=False, criterion=nn.CrossEntropyLoss(), alt=False):
-    if alt:
-        x, y, alt_y = batch
-    else:
-        x, y = batch
+def step(model, batch, hard_acc=False, criterion=nn.CrossEntropyLoss()):
+    x, y = batch # alt_y
     output = model.forward(x)
     logits = output.logits.transpose(1, 2)
     loss = criterion(logits, y)
     batch_len = logits.shape[0]
     where = (y != -100)
     y = y[where].view(batch_len, -1)
-    if alt:
-        alt_y = alt_y[where].view(batch_len, -1)
+    # alt_y = alt_y[where].view(batch_len, -1)
     preds = logits.argmax(axis=1)[where].view(batch_len, -1)
     ## full examples where alt != alt_label
-    batch_same = (y == alt_y).all(axis=-1)
+    # batch_same = (y == alt_y).all(axis=-1)
     if hard_acc:
         acc = (preds == y).all(axis=-1).float().mean() 
-        if alt:
-            alt_acc = (preds == alt_y).all(axis=-1).float().mean()
+        # if alt:
+        #     alt_acc = (preds == alt_y).all(axis=-1).float().mean()
     else:
-        acc = (preds == y)[~batch_same].float().mean() 
-        if alt:
-            alt_acc = (preds == alt_y)[~batch_same].float().mean()
-    if alt:
-        return loss, {"loss": loss.item(), "acc": acc.item(), "alt_acc": alt_acc.item()}
+        acc = (preds == y).float().mean() 
+        # if alt:
+        #     alt_acc = (preds == alt_y).float().mean()
+    # if alt:
+    #     return loss, {"loss": loss.item(), "acc": acc.item(), "alt_acc": alt_acc.item()}
     return loss, {"loss": loss.item(), "acc": acc.item()}
 
 def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step_eval=1000, name=None, pca=True):
@@ -446,7 +445,6 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
     c_step = 0
     probe_results = defaultdict(list)
     probe_results_tail = defaultdict(list)
-    probe_results_switch = defaultdict(list)
     for epoch in pbar:
         pbar.set_description(f"Training Epoch {epoch}")
         for batch in train_dataloader:
@@ -471,8 +469,8 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
                         probe_results = pca_pos(model, test_dataloader, f'Step {c_step}', c_step, probe_results)
                         if tail_end_val_dataloader is not None:
                             probe_results_tail = pca_pos(model, tail_end_val_dataloader, f'Step {c_step}', c_step, probe_results_tail)
-                        if switch_val_dataloader is not None:
-                            probe_results_switch = pca_pos(model, switch_val_dataloader, f'Step {c_step}', c_step, probe_results_switch)
+                        # if switch_val_dataloader is not None:
+                        #     probe_results_switch = pca_pos(model, switch_val_dataloader, f'Step {c_step}', c_step, probe_results_switch)
                     if name is not None:
                         torch.save(model.state_dict(), f'models/{name}_step_{c_step}.pth')
             elif isinstance(step_eval, list):
@@ -486,8 +484,8 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
                         probe_results = pca_pos(model, test_dataloader, f'Step {c_step}', c_step, probe_results)
                         if tail_end_val_dataloader is not None:
                             probe_results_tail = pca_pos(model, tail_end_val_dataloader, f'Step {c_step}', c_step, probe_results_tail)
-                        if switch_val_dataloader is not None:
-                            probe_results_switch = pca_pos(model, switch_val_dataloader, f'Step {c_step}', c_step, probe_results_switch)
+                        # if switch_val_dataloader is not None:
+                        #     probe_results_switch = pca_pos(model, switch_val_dataloader, f'Step {c_step}', c_step, probe_results_switch)
                     if name is not None:
                         torch.save(model.state_dict(), f'models/{name}_step_{c_step}.pth')
             else:
@@ -498,19 +496,19 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
             val_stats = val_loop(model, test_dataloader)
             val_stats = {"val_" + key:val for key,val in val_stats.items()}
             pbar.set_postfix(**val_stats)
-    return hist, probe_results, hist_tail, probe_results_tail, hist_switch, probe_results_switch
+    return hist, probe_results, hist_tail, probe_results_tail, hist_switch
                 
 def val_loop(model, test_dataloader):
     model.eval()
-    acc, acc_alt, losses = [], [], []
+    acc, losses = [], []
     with torch.no_grad():
         pbar = tqdm(test_dataloader)
         for val_batch in pbar:
             loss, stats = step(model, val_batch, hard_acc=True)
             acc.append(stats["acc"])
-            acc_alt.append(stats["alt_acc"])
+            # acc_alt.append(stats["alt_acc"])
             losses.append(stats["loss"])
-            results = {"acc": np.mean(acc), "alt_acc": np.mean(acc_alt), "loss": np.mean(losses)}
+            results = {"acc": np.mean(acc), "loss": np.mean(losses)} #, "alt_acc": np.mean(acc_alt)}
             pbar.set_postfix(**results)
     return results
 
@@ -546,7 +544,7 @@ def main(args):
     # step_eval = list(range(0, 1010, 10)) + [1200, 1400, 1600, 1800, 2000, 2400, 3200, 4000, 6000, 8000, 16000, 28000]
     step_eval = list(range(0, 1000, 10)) + list(range(1000, 30000, 100))
     print('training...', flush=True)
-    hist, probing_results, hist_tail, probing_results_tail, hist_switch, probing_results_switch = train_loop(toy_bert_model, train_dataloader, (val_dataloader, tail_end_val_dataloader, switch_val_dataloader), \
+    hist, probing_results, hist_tail, probing_results_tail, hist_switch = train_loop(toy_bert_model, train_dataloader, (val_dataloader, tail_end_val_dataloader, switch_val_dataloader), \
                                         optimizer, num_epochs, \
                                         step_eval=step_eval, name=None)#'pos_model')
     print('saving results...', flush=True)
@@ -594,20 +592,6 @@ def main(args):
     ax.set_ylabel("Layer")
     ax.set_title("Tail POS Probing")
     plt.savefig(os.path.join(output_dir, 'pos_probing_tail_steps.png'))
-    plt.close()
-    
-    df_switch = pd.DataFrame(probing_results_switch)
-    df_switch = df_switch.transpose()
-    df_switch.columns = step_eval[:len(df_switch.columns)]
-    df_switch = df_switch[::-1]
-    df_switch.to_csv(os.path.join(output_dir, 'pos_probing_switch_results.csv'))
-    
-    plt.figure()
-    ax = sns.heatmap(df_switch, annot=False)
-    ax.set_xlabel("Step")
-    ax.set_ylabel("Layer")
-    ax.set_title("Switch POS Probing")
-    plt.savefig(os.path.join(output_dir, 'pos_probing_switch_results.png'))
     plt.close()
     
 if __name__ == "__main__":
