@@ -35,6 +35,7 @@ special_token_dict_pos = {}
 special_token_dict_dep = {}
 noun_tokens = []
 adj_tokens = []
+random_tokens = []
 seq_tokens = []
 example_len = 0
 
@@ -97,17 +98,19 @@ def parameterize_pos_vocab_old(num_pos_tokens):
   noun_tokens = range(num_pos_tokens//2)
   adj_tokens = range(num_pos_tokens//2, num_pos_tokens)
   
-def parameterize_pos_vocab(num_pos_tokens):
+def parameterize_pos_vocab(num_pos_tokens, num_random_tokens):
   assert num_pos_tokens % 2 == 0, "Has to be even"
   global special_token_dict_pos
   global noun_tokens
   global adj_tokens
+  global random_tokens
   special_token_dict_pos = {
       'cop': num_pos_tokens,
       'mask': num_pos_tokens+1
   }
   noun_tokens = range(num_pos_tokens//2)
   adj_tokens = range(num_pos_tokens//2, num_pos_tokens)
+  random_tokens = range(num_pos_tokens+2, num_pos_tokens+2 + num_random_tokens)
 
 def tail_end_z(type='noun'):
     assert type in ['noun', 'adj'], "type not found"
@@ -126,13 +129,13 @@ def zipfian(type='noun', a=1.5):
     if type == 'noun':
         map = {k:v for k,v in zip(range(len(noun_tokens)), noun_tokens)}
     else:
-        map = {k:v for k,v in zip(range(len(adj_tokens)), adj_tokens)}    
+        map = {k:v for k,v in zip(range(len(adj_tokens)), adj_tokens)}
     value = np.random.zipf(a)
     while value not in map.keys():
         value = np.random.zipf(a)
     return map[value]
 
-def create_dataset_task_pos_old(num_examples, mask_probability=0.15, masking='train', sample_func=zipfian, tail_end=False, switch=False):
+def create_dataset_task_pos_old(num_examples, mask_probability=0.15, masking='train', sample_func=zipfian, tail_end=False, switch=False, num_random=0):
     dataset = []
     labels = []
     alt_labels = []
@@ -140,7 +143,7 @@ def create_dataset_task_pos_old(num_examples, mask_probability=0.15, masking='tr
         sample_func = lambda type: sample_func('noun') if type == 'adj' else sample_func('adj')
         tail_end_z = lambda type: tail_end_z('noun') if type == 'adj' else tail_end_z('adj')
     for _ in range(num_examples):
-        rand_val = random.random()
+        rand_val = random.choice(range())
         if rand_val < 0.10: #0.40
             noun = sample_func('noun') if not tail_end else tail_end_z('noun')
             seq = [special_token_dict_pos['cop'], special_token_dict_pos['null'], noun]
@@ -201,9 +204,13 @@ def create_dataset_task_pos_old(num_examples, mask_probability=0.15, masking='tr
         alt_labels.append(alt_labels_seq)
     return dataset, labels, alt_labels
 
-def create_dataset_task_pos(num_examples, sample_func=zipfian, tail_end_z = tail_end_z, tail_end=False, switch=False):
+def create_dataset_task_pos(num_examples, sample_func=zipfian, tail_end_z = tail_end_z, tail_end=False, switch=False, random=False):
     dataset = []
     labels = []
+    if random:
+        sample_func_upd = lambda type: random.choice(random_tokens)
+        if len(random_tokens) == 0:
+            raise ValueError('No random tokens found')
     if switch:
         sample_func_upd = lambda type: sample_func('noun') if type == 'adj' else sample_func('adj')
         tail_end_z_upd = lambda type: tail_end_z('noun') if type == 'adj' else tail_end_z('adj')
@@ -322,6 +329,8 @@ def create_dataloaders(num_train, num_val, device="cpu", task=create_dataset_tas
     inputs_v, labels_v = task(num_val)
     inputs_e, labels_e = task(num_val, tail_end=True)
     inputs_s, labels_s = task(num_val, switch=True)
+    inputs_st, labels_st = task(num_val, switch=True, tail_end=True)
+    inputs_r, labels_r = task(num_val, random=True)
     
     # print(inputs_t[:5], labels_t[:5], alt_labels_t[:5])
     inputs_t = torch.tensor(inputs_t).to(device)
@@ -336,16 +345,34 @@ def create_dataloaders(num_train, num_val, device="cpu", task=create_dataset_tas
     inputs_s = torch.tensor(inputs_s).to(device)
     labels_s = torch.tensor(labels_s).to(device)
     
+    inputs_st = torch.tensor(inputs_st).to(device)
+    labels_st = torch.tensor(labels_st).to(device)
+    
+    inputs_r = torch.tensor(inputs_r).to(device)
+    labels_r = torch.tensor(labels_r).to(device)
+    
     train_dataset = TensorDataset(inputs_t.detach(), labels_t)
     val_dataset = TensorDataset(inputs_v.detach(), labels_v)
     tail_end_val_dataset = TensorDataset(inputs_e.detach(), labels_e)
     switch_val_dataset = TensorDataset(inputs_s.detach(), labels_s)
+    tail_switch_val_dataset = TensorDataset(inputs_st.detach(), labels_st)
+    random_val_dataset = TensorDataset(inputs_r.detach(), labels_r)
     
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
     tail_end_val_dataloader = DataLoader(tail_end_val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
     switch_dataloader = DataLoader(switch_val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-    return train_dataloader, val_dataloader, tail_end_val_dataloader, switch_dataloader
+    tail_switch_dataloader = DataLoader(tail_switch_val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    random_dataloader = DataLoader(random_val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    
+    test_dataloader = {
+        'val': val_dataloader,
+        'tail': tail_end_val_dataloader,
+        'switch': switch_dataloader, 
+        'tail_switch': tail_switch_dataloader,
+        'random': random_dataloader
+    }
+    return train_dataloader, test_dataloader
 
 def create_dataloaders_bin(data, labels, device="cpu"):
     train_len = int(0.80 * len(data))
@@ -429,9 +456,17 @@ def step(model, batch, hard_acc=False, criterion=nn.CrossEntropyLoss()):
 
 def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step_eval=1000, name=None, pca=True):
     tail_end_val_dataloader = None
-    if isinstance(test_dataloader, tuple):
+    hist = {}
+    probe_results = {}
+    
+    if isinstance(test_dataloader, dict):
+        hist = {key: {} for key in test_dataloader.keys()}
+        probe_results = {key: defaultdict(list) for key in test_dataloader.keys()}
+    elif isinstance(test_dataloader, tuple):
         if len(test_dataloader) == 3:
             test_dataloader, tail_end_val_dataloader, switch_val_dataloader = test_dataloader
+            hist = {key: {} for key in ['val', 'tail', 'switch']}
+            probe_results = {key: defaultdict(list) for key in ['val', 'tail', 'switch']}
         elif len(test_dataloader) == 2:
             test_dataloader, tail_end_val_dataloader = test_dataloader
         else:
@@ -439,12 +474,12 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
         
     pbar = tqdm(range(epochs))
     val_stats = {}
-    hist = {}
-    hist_tail = {}
-    hist_switch = {}
+    # hist = {}
+    # hist_tail = {}
+    # hist_switch = {}
     c_step = 0
-    probe_results = defaultdict(list)
-    probe_results_tail = defaultdict(list)
+    # probe_results = defaultdict(list)
+    # probe_results_tail = defaultdict(list)
     for epoch in pbar:
         pbar.set_description(f"Training Epoch {epoch}")
         for batch in train_dataloader:
@@ -460,30 +495,40 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
             pbar.set_postfix(**stats)
             if isinstance(step_eval, int):
                 if c_step % step_eval == 0:
-                    hist[c_step] = val_loop(model, test_dataloader)
-                    if tail_end_val_dataloader is not None:
-                        hist_tail[c_step] = val_loop(model, tail_end_val_dataloader)
-                    if switch_val_dataloader is not None:
-                        hist_switch[c_step] = val_loop(model, switch_val_dataloader)
-                    if pca:
-                        probe_results = pca_pos(model, test_dataloader, f'Step {c_step}', c_step, probe_results)
-                        if tail_end_val_dataloader is not None:
-                            probe_results_tail = pca_pos(model, tail_end_val_dataloader, f'Step {c_step}', c_step, probe_results_tail)
+                    # hist[c_step] = val_loop(model, test_dataloader)
+                    for key in probe_results.keys():
+                        hist[key][c_step] = val_loop(model, test_dataloader[key])
+                        if pca and key in ['val', 'tail']:
+                            probe_results[key] = pca_pos(model, test_dataloader[key], f'Step {c_step}', c_step, probe_results[key])
+                        
+                    # if tail_end_val_dataloader is not None:
+                    #     hist_tail[c_step] = val_loop(model, tail_end_val_dataloader)
+                    # if switch_val_dataloader is not None:
+                    #     hist_switch[c_step] = val_loop(model, switch_val_dataloader)
+                    # if pca:
+                    #     probe_results = pca_pos(model, test_dataloader, f'Step {c_step}', c_step, probe_results)
+                    #     if tail_end_val_dataloader is not None:
+                    #         probe_results_tail = pca_pos(model, tail_end_val_dataloader, f'Step {c_step}', c_step, probe_results_tail)
                         # if switch_val_dataloader is not None:
                         #     probe_results_switch = pca_pos(model, switch_val_dataloader, f'Step {c_step}', c_step, probe_results_switch)
                     if name is not None:
                         torch.save(model.state_dict(), f'models/{name}_step_{c_step}.pth')
             elif isinstance(step_eval, list):
                 if c_step in step_eval:
-                    hist[c_step] = val_loop(model, test_dataloader)
-                    if tail_end_val_dataloader is not None:
-                        hist_tail[c_step] = val_loop(model, tail_end_val_dataloader)
-                    if switch_val_dataloader is not None:
-                        hist_switch[c_step] = val_loop(model, switch_val_dataloader)
-                    if pca:
-                        probe_results = pca_pos(model, test_dataloader, f'Step {c_step}', c_step, probe_results)
-                        if tail_end_val_dataloader is not None:
-                            probe_results_tail = pca_pos(model, tail_end_val_dataloader, f'Step {c_step}', c_step, probe_results_tail)
+                    for key in probe_results.keys():
+                        hist[key][c_step] = val_loop(model, test_dataloader[key])
+                        if pca and key in ['val', 'tail']:
+                            probe_results[key] = pca_pos(model, test_dataloader[key], f'Step {c_step}', c_step, probe_results[key])
+
+                    # hist[c_step] = val_loop(model, test_dataloader)
+                    # if tail_end_val_dataloader is not None:
+                    #     hist_tail[c_step] = val_loop(model, tail_end_val_dataloader)
+                    # if switch_val_dataloader is not None:
+                    #     hist_switch[c_step] = val_loop(model, switch_val_dataloader)
+                    # if pca:
+                    #     probe_results = pca_pos(model, test_dataloader, f'Step {c_step}', c_step, probe_results)
+                    #     if tail_end_val_dataloader is not None:
+                    #         probe_results_tail = pca_pos(model, tail_end_val_dataloader, f'Step {c_step}', c_step, probe_results_tail)
                         # if switch_val_dataloader is not None:
                         #     probe_results_switch = pca_pos(model, switch_val_dataloader, f'Step {c_step}', c_step, probe_results_switch)
                     if name is not None:
@@ -496,7 +541,7 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
             val_stats = val_loop(model, test_dataloader)
             val_stats = {"val_" + key:val for key,val in val_stats.items()}
             pbar.set_postfix(**val_stats)
-    return hist, probe_results, hist_tail, probe_results_tail, hist_switch
+    return hist, probe_results
                 
 def val_loop(model, test_dataloader):
     model.eval()
@@ -513,6 +558,7 @@ def val_loop(model, test_dataloader):
     return results
 
 def main(args):
+    num_random = args.num_random if args.num_random is not None else args.dataset_size // 10
     num_epochs = args.epochs
     batch_size = args.batch_size
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -526,7 +572,7 @@ def main(args):
     torch.backends.cudnn.benchmark = False
     
     config = BertConfig(
-        vocab_size=args.vocab_size+2 if task==create_dataset_task_pos else 401, ## args.vocab_size+3 if have null token
+        vocab_size=args.vocab_size+2+num_random if task==create_dataset_task_pos else 401, ## args.vocab_size+3 if have null token
         hidden_size=args.hidden_size, # 128  
         num_hidden_layers=args.hidden_num_layers, # 8
         num_attention_heads=args.num_attention_heads, # 8
@@ -539,7 +585,7 @@ def main(args):
     max_num_steps = args.dataset_size *  num_epochs/batch_size
     print('Max number of steps is ', max_num_steps, flush=True)
     print('creating dataset...', flush=True)
-    train_dataloader, val_dataloader, tail_end_val_dataloader, switch_val_dataloader = create_dataloaders(args.dataset_size, 10_000, device=device, task=partial_task)
+    train_dataloader, test_dataloaders = create_dataloaders(args.dataset_size, 10_000, device=device, task=partial_task)
     # torch.save(train_dataloader.dataset.tensors[0], 'train_dataloader0.pth')
     # step_eval = list(range(0, 1010, 10)) + [1200, 1400, 1600, 1800, 2000, 2400, 3200, 4000, 6000, 8000, 16000, 28000]
     step_eval = list(range(0, 1000, 10)) + list(range(1000, 30000, 100))
@@ -612,5 +658,6 @@ if __name__ == "__main__":
     parser.add_argument('--vocab_size', type=int, default=100, help='Vocab size of the model')
     parser.add_argument('--a', type=float, default=1.5, help='Zipfian parameter')
     parser.add_argument('--sample_func', type=str, default='zipfian', help='Sampling function')
+    parser.add_argument('--num_random', type=int, default=None, help='Number of random examples')
     args = parser.parse_args()
     main(args)
