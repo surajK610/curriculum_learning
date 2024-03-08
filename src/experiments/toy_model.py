@@ -454,7 +454,7 @@ def step(model, batch, hard_acc=False, criterion=nn.CrossEntropyLoss()):
     #     return loss, {"loss": loss.item(), "acc": acc.item(), "alt_acc": alt_acc.item()}
     return loss, {"loss": loss.item(), "acc": acc.item()}
 
-def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step_eval=1000, name=None, pca=True):
+def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step_eval=1000, name=None, pca=['val', 'tail', 'random']):
     tail_end_val_dataloader = None
     hist = {}
     probe_results = {}
@@ -498,39 +498,16 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer, epochs, step
                     # hist[c_step] = val_loop(model, test_dataloader)
                     for key in probe_results.keys():
                         hist[key][c_step] = val_loop(model, test_dataloader[key])
-                        if pca and key in ['val', 'tail']:
+                        if key in pca:
                             probe_results[key] = pca_pos(model, test_dataloader[key], f'Step {c_step}', c_step, probe_results[key])
-                        
-                    # if tail_end_val_dataloader is not None:
-                    #     hist_tail[c_step] = val_loop(model, tail_end_val_dataloader)
-                    # if switch_val_dataloader is not None:
-                    #     hist_switch[c_step] = val_loop(model, switch_val_dataloader)
-                    # if pca:
-                    #     probe_results = pca_pos(model, test_dataloader, f'Step {c_step}', c_step, probe_results)
-                    #     if tail_end_val_dataloader is not None:
-                    #         probe_results_tail = pca_pos(model, tail_end_val_dataloader, f'Step {c_step}', c_step, probe_results_tail)
-                        # if switch_val_dataloader is not None:
-                        #     probe_results_switch = pca_pos(model, switch_val_dataloader, f'Step {c_step}', c_step, probe_results_switch)
                     if name is not None:
                         torch.save(model.state_dict(), f'models/{name}_step_{c_step}.pth')
             elif isinstance(step_eval, list):
                 if c_step in step_eval:
                     for key in probe_results.keys():
                         hist[key][c_step] = val_loop(model, test_dataloader[key])
-                        if pca and key in ['val', 'tail']:
+                        if key in pca:
                             probe_results[key] = pca_pos(model, test_dataloader[key], f'Step {c_step}', c_step, probe_results[key])
-
-                    # hist[c_step] = val_loop(model, test_dataloader)
-                    # if tail_end_val_dataloader is not None:
-                    #     hist_tail[c_step] = val_loop(model, tail_end_val_dataloader)
-                    # if switch_val_dataloader is not None:
-                    #     hist_switch[c_step] = val_loop(model, switch_val_dataloader)
-                    # if pca:
-                    #     probe_results = pca_pos(model, test_dataloader, f'Step {c_step}', c_step, probe_results)
-                    #     if tail_end_val_dataloader is not None:
-                    #         probe_results_tail = pca_pos(model, tail_end_val_dataloader, f'Step {c_step}', c_step, probe_results_tail)
-                        # if switch_val_dataloader is not None:
-                        #     probe_results_switch = pca_pos(model, switch_val_dataloader, f'Step {c_step}', c_step, probe_results_switch)
                     if name is not None:
                         torch.save(model.state_dict(), f'models/{name}_step_{c_step}.pth')
             else:
