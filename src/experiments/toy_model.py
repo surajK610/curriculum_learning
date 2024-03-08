@@ -546,7 +546,8 @@ def main(args):
     print('training...', flush=True)
     hist, probing_results, hist_tail, probing_results_tail, hist_switch = train_loop(toy_bert_model, train_dataloader, (val_dataloader, tail_end_val_dataloader, switch_val_dataloader), \
                                         optimizer, num_epochs, \
-                                        step_eval=step_eval, name=None)#'pos_model')
+                                        step_eval=step_eval, name=None) 
+                                        # pca = False)#'pos_model')
     print('saving results...', flush=True)
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
