@@ -239,88 +239,79 @@ class TrainingPipeline:
 
 
 def main(args):
-    num_random = args.num_random if args.num_random is not None else args.dataset_size // 10
-    num_epochs = args.epochs
-    batch_size = args.batch_size
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    parameterize_pos_vocab(args.vocab_size) if args.task == 'pos' else parameterize_dep_vocab(400, 20)
-    
-    task=create_dataset_task_pos if args.task == 'pos' else create_dataset_task_dep
+    ## SETTING SEED
     torch.manual_seed(args.seed)
     random.seed(args.seed)
     np.random.seed(args.seed)
-
-    torch.backends.cudnn.benchmark = False
     
+    ## SETTING UP PARAMETERS
+    num_random = args.num_random if args.num_random is not None else args.dataset_size // 10
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    
+    ## SETTING UP TASK
+    dset_gen = POSVocabGenerator()
+    dset_gen.parameterize_pos_vocab(args.vocab_size, num_random)
+    
+    ## SETTING UP MODEL
     config = BertConfig(
-        vocab_size=args.vocab_size+2+num_random if task==create_dataset_task_pos else 401, ## args.vocab_size+3 if have null token
+        vocab_size=dset_gen.get_vocab_tokens(), ## args.vocab_size+3 if have null token
         hidden_size=args.hidden_size, # 128  
         num_hidden_layers=args.hidden_num_layers, # 8
         num_attention_heads=args.num_attention_heads, # 8
         intermediate_size=args.intermediate_size # 512
     )
-    sample_func = lambda type: zipfian(type, a=args.a) if args.sample_func == 'zipfian' else lambda type: uniform(type)
-    partial_task = partial(task, sample_func=sample_func) if task==create_dataset_task_pos else task
     toy_bert_model = BertForMaskedLM(config).to(device)
     optimizer = torch.optim.AdamW(toy_bert_model.parameters(), lr=5e-5) 
-    max_num_steps = args.dataset_size *  num_epochs/batch_size
-    print('Max number of steps is ', max_num_steps, flush=True)
-    print('creating dataset...', flush=True)
-    train_dataloader, test_dataloaders = create_dataloaders(args.dataset_size, 10_000, device=device, task=partial_task)
-    # torch.save(train_dataloader.dataset.tensors[0], 'train_dataloader0.pth')
-    # step_eval = list(range(0, 1010, 10)) + [1200, 1400, 1600, 1800, 2000, 2400, 3200, 4000, 6000, 8000, 16000, 28000]
     step_eval = list(range(0, 1000, 10)) + list(range(1000, 30000, 100))
-    print('training...', flush=True)
-    hist, probing_results, hist_tail, probing_results_tail, hist_switch = train_loop(toy_bert_model, train_dataloader, test_dataloaders, \
-                                        optimizer, num_epochs, \
-                                        step_eval=step_eval, name=None) 
-                                        # pca = False)#'pos_model')
+    max_num_steps = args.dataset_size *  args.num_epochs/args.batch_size
+    print('Max number of steps is ', max_num_steps, flush=True)
+    pipeline = TrainingPipeline(
+        model=toy_bert_model,
+        vocab_gen=dset_gen,
+        criterion=nn.CrossEntropyLoss(),
+        optimizer=optimizer,
+        train_dataloader=None, ## set to none so will automatically set up
+        test_dataloader=None, ## set to none so will automatically set up
+        device=device,
+        batch_size=args.batch_size,
+        epochs=args.num_epochs,
+        num_train=args.dataset_size,
+        num_val=10_000,
+        step_eval=step_eval,
+        name=None, ## does not save model during training
+        pca=['val', 'tail', 'random'],
+        hist={},
+        probe_results={},
+        a=args.a,
+        sample_func=args.sample_func)
+    
+        
+    hist, probing_results = pipeline.train_loop()
+    
+    for key, val_dataloader in pipeline.test_dataloader.items():
+        val_stats = pipeline.val_loop(val_dataloader)
+        print(key, val_stats) # 10 - 80 identical, 10 - 20 1 token diff, 20 - 80 2 token diff
+  
     print('saving results...', flush=True)
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
+    for key, hist_val in hist.items():
+        hist_df = pd.DataFrame(hist_val)
+        hist_df.to_csv(os.path.join(output_dir, f'hist_{key}.csv'))
     
-    val_stats = val_loop(toy_bert_model, test_dataloaders['val'])
-    print("VAL", val_stats) # 10 - 80 identical, 10 - 20 1 token diff, 20 - 80 2 token diff
-    tail_stats = val_loop(toy_bert_model, test_dataloaders['tail'])
-    print("TAIL VAL", tail_stats)
-    switch_stats = val_loop(toy_bert_model, test_dataloaders['switch'])
-    print("SWITCH VAL", switch_stats)
-    
-    hist_df = pd.DataFrame(hist)
-    hist_df.to_csv(os.path.join(output_dir, 'hist.csv'))
-    
-    hist_tail_df = pd.DataFrame(hist_tail)
-    hist_tail_df.to_csv(os.path.join(output_dir, 'hist_tail.csv'))
-    
-    hist_switch_df = pd.DataFrame(hist_switch)
-    hist_switch_df.to_csv(os.path.join(output_dir, 'hist_switch.csv'))
-    
-    df = pd.DataFrame(probing_results)
-    df = df.transpose()
-    df.columns = step_eval[:len(df.columns)]
-    df = df[::-1]
-    df.to_csv(os.path.join(output_dir, 'pos_probing_results.csv'))
-
-    ax = sns.heatmap(df, annot=False)
-    ax.set_xlabel("Step")
-    ax.set_ylabel("Layer")
-    ax.set_title("POS Probing")
-    plt.savefig(os.path.join(output_dir, 'pos_probing_steps.png'))
-    
-    
-    df_tail = pd.DataFrame(probing_results_tail)
-    df_tail = df_tail.transpose()
-    df_tail.columns = step_eval[:len(df_tail.columns)]
-    df_tail = df_tail[::-1]
-    df_tail.to_csv(os.path.join(output_dir, 'pos_probing_tail_results.csv'))
-    
-    plt.figure()
-    ax = sns.heatmap(df_tail, annot=False)
-    ax.set_xlabel("Step")
-    ax.set_ylabel("Layer")
-    ax.set_title("Tail POS Probing")
-    plt.savefig(os.path.join(output_dir, 'pos_probing_tail_steps.png'))
-    plt.close()
+    for key, probe_val in probing_results.items():
+        df = pd.DataFrame(probe_val)
+        df = df.transpose()
+        df.columns = step_eval[:len(df.columns)]
+        df = df[::-1]
+        df.to_csv(os.path.join(output_dir, f'pos_probing_results_{key}.csv'))
+        
+        ax = sns.heatmap(df, annot=False)
+        ax.set_xlabel("Step")
+        ax.set_ylabel("Layer")
+        ax.set_title(f"POS Probing {key}")
+        plt.savefig(os.path.join(output_dir, f'pos_probing_steps_{key}.png'))
+        plt.close()
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train a model on a toy task')

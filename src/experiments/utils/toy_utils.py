@@ -20,14 +20,6 @@ import random
 import numpy as np
 from dataclasses import dataclass, field
 
-special_token_dict_pos = {}
-special_token_dict_dep = {}
-noun_tokens = []
-adj_tokens = []
-random_tokens = []
-seq_tokens = []
-example_len = 0
-
 ## ------------------------------------------ PROBING ----------------------------------  
 class Probe(nn.Module):
     def __init__(self, num_features: int):
@@ -94,7 +86,7 @@ class POSVocabGenerator:
     adj_tokens: List[int] = field(default_factory=list)
     random_tokens: List[int] = field(default_factory=list)
     seq_tokens: List[int] = field(default_factory=list)
-    example_len: int = 0
+    
 
     def parameterize_pos_vocab(self, num_pos_tokens: int, num_random_tokens: int):
         assert num_pos_tokens % 2 == 0, "Number of POS tokens must be even"
@@ -121,6 +113,9 @@ class POSVocabGenerator:
         while value not in map:
             value = np.random.zipf(a)
         return map[value]
+    
+    def get_vocab_size(self):
+        return len(self.noun_tokens + self.adj_tokens + self.random_tokens) + len(self.special_token_dict_pos)
 
     def create_dataset_task_pos(self, num_examples: int, sample_func: Callable = zipfian, tail_end=False, switch=False, random=False, device=None) -> Tuple[List[List[int]], List[List[int]]]:
         dataset = []
