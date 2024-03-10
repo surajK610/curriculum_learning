@@ -73,7 +73,7 @@ class TrainingPipeline:
     
     def train_loop(self):
         if self.train_dataloader is None or self.test_dataloader is None:
-            logging.debug("Training/testing dataloader(s) not provided, creating new ones")
+            logging.debug("training/testing dataloader(s) not provided, creating new ones...")
             self.train_dataloader, self.test_dataloader = self._prepare_dataloaders()
             
         self._prepare_logging()
@@ -118,6 +118,7 @@ class TrainingPipeline:
         return results
     
     def pca_pos(self, val_dataloader, title, c_step, output_dir=None, plot=False, probe_results=None):
+        logging.debug(f"running probing/PCA for step {c_step}...")
         probe_results = probe_results if probe_results is not None else defaultdict(list)
         labels, hidden_layers = [], defaultdict(list)
         
@@ -161,6 +162,7 @@ class TrainingPipeline:
         """
         Helper method to plot PCA results for a given hidden state.
         """
+        logging.debug(f"plotting PCA results for hidden state {state_index}...")
         labels_numpy = labels.cpu().numpy().squeeze()
         np_embed = torch_embed.cpu().numpy()
         pca = PCA(n_components=2)
@@ -207,9 +209,12 @@ class TrainingPipeline:
             'tail_switch': tail_switch_dataloader,
             'random': random_dataloader
         }
+        logging.debug("finished creating new dataloaders...")
+        
         return train_dataloader, test_dataloader
     
     def _prepare_logging(self):
+        logging.debug("preparing logging...")
         if isinstance(test_dataloader, dict):
             self.hist = {key: {} for key in test_dataloader.keys()}
             self.probe_results = {key: defaultdict(list) for key in test_dataloader.keys()}
@@ -229,17 +234,21 @@ class TrainingPipeline:
             
     
     def _evaluate_during_training(self, c_step):
+        logging.debug(f"evaluating during training step {c_step}...")
         if (isinstance(self.step_eval, int) and c_step % self.step_eval == 0) or (c_step in self.step_eval):
             for key, dataloader in self.test_dataloader.items():
                 self.hist[key][c_step] = self.val_loop(dataloader)
                 if key in self.pca:
                     self.probe_results[key] = self.pca_pos(dataloader, f'Step {c_step}', c_step, self.probe_results[key])
                 if self.name:
+                    logging.debug(f"saving model at step {c_step}...")
                     torch.save(self.model.state_dict(), f'models/{self.name}_step_{c_step}.pth')
 
 
 def main(args):
     ## SETTING SEED
+    logging.basicConfig(filename=args.log, level=logging.DEBUG)
+
     torch.manual_seed(args.seed)
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -284,7 +293,6 @@ def main(args):
         probe_results={},
         a=args.a,
         sample_func=args.sample_func)
-    
         
     hist, probing_results = pipeline.train_loop()
     
@@ -331,5 +339,6 @@ if __name__ == "__main__":
     parser.add_argument('--a', type=float, default=1.5, help='Zipfian parameter')
     parser.add_argument('--sample_func', type=str, default='zipfian', help='Sampling function')
     parser.add_argument('--num_random', type=int, default=None, help='Number of random examples')
+    parser.add_argument('--log', type=str, default='toy_model.log', help='Log file')
     args = parser.parse_args()
     main(args)
