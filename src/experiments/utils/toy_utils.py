@@ -3,6 +3,7 @@ from typing import List, Tuple, Callable
 from typing_extensions import get_args, Literal
 import sys
 import numpy as np
+import itertools
 
 import torch
 import torch.nn as nn
@@ -85,14 +86,27 @@ class POSVocabGenerator:
     noun_tokens: List[int] = field(default_factory=list)
     adj_tokens: List[int] = field(default_factory=list)
     random_tokens: List[int] = field(default_factory=list)
-    seq_tokens: List[int] = field(default_factory=list)
+    amb_tokens: List[int] = field(default_factory=list)
     
-
-    def parameterize_pos_vocab(self, num_pos_tokens: int, num_random_tokens: int):
+    def parameterize_pos_vocab(self, num_pos_tokens: int, num_random_tokens: int, prop_amb=0.0, bins=10, tail_only=False):
         assert num_pos_tokens % 2 == 0, "Number of POS tokens must be even"
         self.special_token_dict_pos = {'cop': num_pos_tokens, 'mask': num_pos_tokens + 1}
         self.noun_tokens = list(range(num_pos_tokens // 2))
         self.adj_tokens = list(range(num_pos_tokens // 2, num_pos_tokens))
+        
+        def choose_amb_tokens(lst):
+            bin_size = len(lst) // bins
+            binned = [lst[i*bin_size:(i+1)*bin_size] for i in range(bins)]
+            binned[-1].extend(lst[bins*bin_size:])
+            selected = [np.random.choice(bin_, size=int(np.ceil(len(bin_) * prop_amb)), replace=False).tolist() for bin_ in binned]
+            selected = list(itertools.chain.from_iterable(selected))
+            return selected
+    
+        if tail_only:
+            self.amb_tokens = self.noun_tokens[int(-len(self.noun_tokens) * prop_amb):] + self.adj_tokens[int(-len(self.adj_tokens) * prop_amb):]
+        else:
+            self.amb_tokens = choose_amb_tokens(self.noun_tokens) + choose_amb_tokens(self.adj_tokens)
+        print(self.amb_tokens)
         self.random_tokens = list(range(num_pos_tokens + 2, num_pos_tokens + 2 + num_random_tokens))
 
     def tail_end_z(self, type='noun'):
@@ -114,23 +128,53 @@ class POSVocabGenerator:
             value = np.random.zipf(a)
         return map[value]
     
-    def get_vocab_size(self):
+    def get_vocab_tokens(self):
         return len(self.noun_tokens + self.adj_tokens + self.random_tokens) + len(self.special_token_dict_pos)
 
-    def create_dataset_task_pos(self, num_examples: int, sample_func: Callable = zipfian, tail_end=False, switch=False, random=False, device=None) -> Tuple[List[List[int]], List[List[int]]]:
+    def create_dataset_task_pos(self, num_examples: int, sample_func: Callable = zipfian, prop_amb_all=0.0, tail_end=False, switch=False, random_v=False, amb_only=False, non_amb_only=False, device=None) -> Tuple[List[List[int]], List[List[int]]]:
         dataset = []
         labels = []
-
-        def get_sample_func_upd(sample_func, tail_end_z):
-            if random:
+        
+        def get_sample_func_upd(sample_func):
+            ## random embeddings
+            if random_v:
                 if len(self.random_tokens) == 0:
                     raise ValueError('No random tokens found')
                 return lambda type: random.choice(self.random_tokens)
+            ## switch and tail
+            if switch and tail_end:
+                return lambda type: self.tail_end_z('noun') if type == 'adj' else self.tail_end_z('adj')
+            ## just switch 
             if switch:
-                return lambda type: sample_func(self, 'noun') if type == 'adj' else sample_func(self, 'adj')
-            return lambda type: sample_func(self, type) if not tail_end else lambda type: tail_end_z(self, type)
+                return lambda type: sample_func('noun') if type == 'adj' else sample_func('adj')
+            ## just tail end of distribution (10% tokens by number)
+            if tail_end:
+                return self.tail_end_z
+            ## ambigous tokens
+            if amb_only:
+                return lambda type: random.choice(self.amb_tokens)
+            ## non-ambigous tokens
+            if non_amb_only:
+                def tmp_func_na(type):
+                    while True:
+                        if type == 'noun':
+                            token = random.choice(self.noun_tokens)
+                        else:
+                            token = random.choice(self.adj_tokens)
+                        if token not in self.amb_tokens:
+                            return token
+                return tmp_func_na
+            ## proportion ambiguous (used during training)
+            if prop_amb_all > 0.0:
+                def tmp_func(type):
+                    if random.random() > prop_amb_all:
+                        return sample_func(type)
+                    else:
+                        return sample_func('noun') if type == 'adj' else sample_func('adj')
+                return tmp_func            
+            return sample_func
 
-        sample_func_upd = get_sample_func_upd(sample_func, self.tail_end_z)
+        sample_func_upd = get_sample_func_upd(sample_func)
 
         for _ in range(num_examples):
             rand_val = random.random()
@@ -165,12 +209,12 @@ class POSVocabGeneratorOld:
         self.special_token_dict_pos = {'cop': num_pos_tokens, 'null': num_pos_tokens + 1, 'mask': num_pos_tokens + 2}
         self.noun_tokens = list(range(num_pos_tokens // 2))
         self.adj_tokens = list(range(num_pos_tokens // 2, num_pos_tokens))
-        
+    
     def tail_end_z(self, type='noun'):
         assert type in ['noun', 'adj'], "type not found"
         tokens = self.noun_tokens if type == 'noun' else self.adj_tokens
         return random.choice(tokens[-len(tokens) // 10:])
-
+    
     def uniform(self, type='noun'):
         assert type in ['noun', 'adj'], "type not found"
         tokens = self.noun_tokens if type == 'noun' else self.adj_tokens

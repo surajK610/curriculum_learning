@@ -20,7 +20,6 @@ import argparse
 import pandas as pd
 from tqdm.notebook import tqdm
 from functools import partial
-
 from torch.utils.data import DataLoader, TensorDataset
 
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments/utils')
@@ -49,9 +48,11 @@ class TrainingPipeline:
     step_eval: Union[int, List[int]] = 1000
     name: str = None
     pca: List[str] = field(default_factory=lambda: ['val', 'tail', 'random'])
-    hist : Dict = {}
-    probe_results : Dict = {}
+    hist : Dict = field(default_factory=dict)
+    probe_results : Dict = field(default_factory=dict)
     a : int = 1.5
+    prop_amb : float = 0.0
+    bins : int = 10
     sample_func : str = 'zipfian'
 
     def step(self, batch, hard_acc=False):
@@ -84,6 +85,7 @@ class TrainingPipeline:
         for epoch in pbar:
             pbar.set_description(f"Training Epoch {epoch}")
             for batch in self.train_dataloader:
+                print(f"Training step {c_step}", flush=True)
                 sys.stdout.flush()
                 sys.stderr.flush()
                 c_step += 1
@@ -95,13 +97,6 @@ class TrainingPipeline:
                 stats.update(val_stats)
                 pbar.set_postfix(**stats)
                 self._evaluate_during_training(c_step)
-                
-            self.model.eval()
-            with torch.no_grad():
-                pbar.set_description("Validation")
-                val_stats = self.val_loop(self.test_dataloader)
-                val_stats = {"val_" + key:val for key,val in val_stats.items()}
-                pbar.set_postfix(**val_stats)
         return self.hist, self.probe_results
                 
     def val_loop(self, test_dataloader):
@@ -118,36 +113,47 @@ class TrainingPipeline:
         return results
     
     def pca_pos(self, val_dataloader, title, c_step, output_dir=None, plot=False, probe_results=None):
+        if not hasattr(self, 'adj_min'):
+            self.adj_min = min(self.vocab_gen.adj_tokens)
+        if not hasattr(self, 'adj_max'):
+            self.adj_max = max(self.vocab_gen.adj_tokens)
         logging.debug(f"running probing/PCA for step {c_step}...")
         probe_results = probe_results if probe_results is not None else defaultdict(list)
         labels, hidden_layers = [], defaultdict(list)
         
+        def get_labels(examples, blabels):
+            if torch.all(examples[:, -4] <= self.adj_max):
+                assert ((examples[:, -4] < self.adj_min).float() == (examples[:, -4] != blabels[:, -3]).float()).all(), "Noun/Adj labels are not consistent"
+        
+            return (examples[:, -4] != blabels[:, -3]).float()
+                # random tokens if noun if not equal, adj if equal
+                
         # Enabling model to output hidden states
         self.model.config.output_hidden_states = True
         num_hidden_states = self.model.config.num_hidden_layers + 1
-            
+        
         for batch in val_dataloader:
-            examples, _ = batch
-            labels.append((examples[:, -4] < self.adj_min).float())
+            examples, blabels = batch
+            
+            labels.append(get_labels(examples, blabels))
             with torch.no_grad():
                 outputs = self.model(examples.to(self.device))
             for j in range(num_hidden_states):
                 hidden_layers[j].append(outputs.hidden_states[j][:, -4, :])
-
         labels = torch.concat(labels, axis=0).unsqueeze(1)
 
         for i in range(num_hidden_states):
             torch_embed = torch.concat(hidden_layers[i], axis=0).squeeze()
             probe = Probe(torch_embed.shape[1]).to(self.device)
-            train_dataloader_bin, val_dataloader_bin = self.create_binary_dataloaders(torch_embed, labels)
+            train_dataloader_bin, val_dataloader_bin = create_dataloaders_bin(torch_embed, labels)
             optim_bin = torch.optim.AdamW(probe.parameters(), lr=1e-3)
-            results = self.binary_train_loop(probe, train_dataloader_bin, val_dataloader_bin, optim_bin, 3)
+            results = bin_train_loop(probe, train_dataloader_bin, val_dataloader_bin, optim_bin, 3)
             probe_results[i].append(results['acc'])
-
+            
             if plot:
                 _, axs = plt.subplots(1, num_hidden_states, figsize=(5 * num_hidden_states, 5))
                 self._plot_pca_results(axs[i], torch_embed, labels, results['acc'], i)
-                
+    
         if plot:
             plt.suptitle(title)
             if output_dir is not None:
@@ -178,72 +184,90 @@ class TrainingPipeline:
         ax.set_ylabel("Principal Component 2")
         ax.legend()
         ax.grid(True)
-
+        
     def _prepare_dataloaders(self):
         sample_func = lambda type: self.vocab_gen.zipfian(type, a=self.a) if self.sample_func == 'zipfian' else lambda type: self.vocab_gen.uniform(type)
-        inputs_t, labels_t = self.vocab_gen.create_dataset_task_pos(self.num_train, sample_func=sample_func)
-        inputs_v, labels_v = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func)
-        inputs_e, labels_e = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, tail_end=True)
-        inputs_s, labels_s = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True)
-        inputs_st, labels_st = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, tail_end=True)
-        inputs_r, labels_r = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, random=True)
+        inputs_t, labels_t = self.vocab_gen.create_dataset_task_pos(self.num_train, sample_func=sample_func, device=self.device)
+        inputs_v, labels_v = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, device=self.device)
+        inputs_e, labels_e = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, tail_end=True, device=self.device)
+        inputs_s, labels_s = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, device=self.device)
+        inputs_st, labels_st = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, tail_end=True, device=self.device)
+        #inputs_r, labels_r = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, random_v=True, device=self.device)
+        
+        # for random_v in self.vocab_gen.random_tokens:
+        #     values = random.choice(self.vocab_gen.noun_tokens + self.vocab_gen.adj_tokens, 10, replace=False)
+        #     self.model.bert.embeddings.word_embeddings.weight.data[random_v] = torch.mean(self.model.bert.embeddings.word_embeddings.weight.data[values], axis=0)
         
         train_dataset = TensorDataset(inputs_t.detach(), labels_t)
         val_dataset = TensorDataset(inputs_v.detach(), labels_v)
         tail_end_val_dataset = TensorDataset(inputs_e.detach(), labels_e)
         switch_val_dataset = TensorDataset(inputs_s.detach(), labels_s)
         tail_switch_val_dataset = TensorDataset(inputs_st.detach(), labels_st)
-        random_val_dataset = TensorDataset(inputs_r.detach(), labels_r)
+        #random_val_dataset = TensorDataset(inputs_r.detach(), labels_r)
         
         train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=0)
         val_dataloader = DataLoader(val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         tail_end_val_dataloader = DataLoader(tail_end_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         switch_dataloader = DataLoader(switch_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         tail_switch_dataloader = DataLoader(tail_switch_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
-        random_dataloader = DataLoader(random_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+        #random_dataloader = DataLoader(random_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         
         test_dataloader = {
             'val': val_dataloader,
             'tail': tail_end_val_dataloader,
             'switch': switch_dataloader, 
             'tail_switch': tail_switch_dataloader,
-            'random': random_dataloader
+            #'random': random_dataloader
         }
+        if self.prop_amb > 0:
+            inputs_na, labels_na = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, non_amb_only=True, device=self.device)
+            inputs_am, labels_am = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, amb_only=True, device=self.device)
+            nonamb_val_dataset = TensorDataset(inputs_na.detach(), labels_na)
+            amb_val_dataset = TensorDataset(inputs_am.detach(), labels_am)
+            nonamb_val_dataloader = DataLoader(nonamb_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+            amb_val_dataloader = DataLoader(amb_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+            test_dataloader['nonamb'] = nonamb_val_dataloader
+            test_dataloader['amb'] = amb_val_dataloader
+            
         logging.debug("finished creating new dataloaders...")
         
         return train_dataloader, test_dataloader
     
     def _prepare_logging(self):
         logging.debug("preparing logging...")
-        if isinstance(test_dataloader, dict):
-            self.hist = {key: {} for key in test_dataloader.keys()}
-            self.probe_results = {key: defaultdict(list) for key in test_dataloader.keys()}
-        elif isinstance(test_dataloader, tuple):
-            if len(test_dataloader) == 3:
+        if isinstance(self.test_dataloader, DataLoader):
+            self.test_dataloader = {'val': test_dataloader}
+            self.hist = {'val': {}}
+            self.probe_results = {'val': defaultdict(list)}
+        elif isinstance(self.test_dataloader, dict):
+            self.hist = {key: {} for key in self.test_dataloader.keys()}
+            self.probe_results = {key: defaultdict(list) for key in self.pca}
+        elif isinstance(self.test_dataloader, tuple):
+            if len(self.test_dataloader) == 3:
                 test_dataloader, tail_end_val_dataloader, switch_val_dataloader = test_dataloader
-                test_dataloader = {'val': test_dataloader, 'tail': tail_end_val_dataloader, 'switch': switch_val_dataloader}
+                self.test_dataloader = {'val': test_dataloader, 'tail': tail_end_val_dataloader, 'switch': switch_val_dataloader}
                 self.hist = {key: {} for key in ['val', 'tail', 'switch']}
                 self.probe_results = {key: defaultdict(list) for key in ['val', 'tail', 'switch']}
             elif len(test_dataloader) == 2:
                 test_dataloader, tail_end_val_dataloader = test_dataloader
-                test_dataloader = {'val': test_dataloader, 'tail': tail_end_val_dataloader}
+                self.test_dataloader = {'val': test_dataloader, 'tail': tail_end_val_dataloader}
                 self.hist = {key: {} for key in ['val', 'tail']}
                 self.probe_results = {key: defaultdict(list) for key in ['val', 'tail']}
             else:
                 raise ValueError('Not recognized format for test_dataloader order/length')
-            
     
     def _evaluate_during_training(self, c_step):
         logging.debug(f"evaluating during training step {c_step}...")
         if (isinstance(self.step_eval, int) and c_step % self.step_eval == 0) or (c_step in self.step_eval):
             for key, dataloader in self.test_dataloader.items():
+                print(f"Running validation for {key} at step {c_step}", flush=True)
                 self.hist[key][c_step] = self.val_loop(dataloader)
                 if key in self.pca:
-                    self.probe_results[key] = self.pca_pos(dataloader, f'Step {c_step}', c_step, self.probe_results[key])
+                    # print(f"Running PCA for {key} at step {c_step}", flush=True)
+                    self.probe_results[key] = self.pca_pos(dataloader, f'Step {c_step}', c_step, probe_results=self.probe_results[key])
                 if self.name:
                     logging.debug(f"saving model at step {c_step}...")
                     torch.save(self.model.state_dict(), f'models/{self.name}_step_{c_step}.pth')
-
 
 def main(args):
     ## SETTING SEED
@@ -259,7 +283,7 @@ def main(args):
     
     ## SETTING UP TASK
     dset_gen = POSVocabGenerator()
-    dset_gen.parameterize_pos_vocab(args.vocab_size, num_random)
+    dset_gen.parameterize_pos_vocab(args.vocab_size, num_random, prop_amb=args.prop_amb, bins=args.bins, tail_only=False)
     
     ## SETTING UP MODEL
     config = BertConfig(
@@ -271,8 +295,8 @@ def main(args):
     )
     toy_bert_model = BertForMaskedLM(config).to(device)
     optimizer = torch.optim.AdamW(toy_bert_model.parameters(), lr=5e-5) 
-    step_eval = list(range(0, 1000, 10)) + list(range(1000, 30000, 100))
-    max_num_steps = args.dataset_size *  args.num_epochs/args.batch_size
+    step_eval = list(range(0, 1000, 20)) + list(range(1000, 30000, 100))
+    max_num_steps = args.dataset_size *  args.epochs/args.batch_size
     print('Max number of steps is ', max_num_steps, flush=True)
     pipeline = TrainingPipeline(
         model=toy_bert_model,
@@ -283,7 +307,7 @@ def main(args):
         test_dataloader=None, ## set to none so will automatically set up
         device=device,
         batch_size=args.batch_size,
-        epochs=args.num_epochs,
+        epochs=args.epochs,
         num_train=args.dataset_size,
         num_val=10_000,
         step_eval=step_eval,
@@ -292,6 +316,8 @@ def main(args):
         hist={},
         probe_results={},
         a=args.a,
+        prop_amb=args.prop_amb,
+        bins=args.bins,
         sample_func=args.sample_func)
         
     hist, probing_results = pipeline.train_loop()
@@ -300,6 +326,7 @@ def main(args):
         val_stats = pipeline.val_loop(val_dataloader)
         print(key, val_stats) # 10 - 80 identical, 10 - 20 1 token diff, 20 - 80 2 token diff
   
+    print(pipeline.hist, pipeline.probe_results)
     print('saving results...', flush=True)
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
@@ -340,5 +367,7 @@ if __name__ == "__main__":
     parser.add_argument('--sample_func', type=str, default='zipfian', help='Sampling function')
     parser.add_argument('--num_random', type=int, default=None, help='Number of random examples')
     parser.add_argument('--log', type=str, default='toy_model.log', help='Log file')
+    parser.add_argument('--prop_amb', type=float, default=0.0, help='Proportion of time noun or adj is switched in training')
+    parser.add_argument('--bins', type=int, default=10, help='Number of bins for probing')
     args = parser.parse_args()
     main(args)

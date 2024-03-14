@@ -64,13 +64,13 @@ def find_directories(path):
 def find_files(path):
     return [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
 
-def collate_validation_accuracy(root_dir, dataset, model, exp, resid, attention_head=None):
+def collate_validation_accuracy(root_dir, seed, dataset, model, exp, resid, attention_head=None):
   data = []
   dirs = find_directories(root_dir)
   if model == 'pythia':
     dirs = [d for d in dirs if d.startswith('pythia')]
   elif model == 'bert':
-    dirs = [d for d in dirs if 'multibert' in d]
+    dirs = [d for d in dirs if 'multibert' in d and seed in d]
   for subdir in dirs:
     step = subdir.split("_")[-1][:-1] 
     if dataset == 'aheads' and model == 'pythia':
@@ -216,8 +216,8 @@ def main(FLAGS):
   
   if FLAGS.path_to_df is None:
     resid = FLAGS.resid == 'True'
-    root_dir = os.path.join(home, "outputs", FLAGS.dataset, FLAGS.exp)
-    df = pd.DataFrame(collate_validation_accuracy(root_dir, FLAGS.dataset, FLAGS.model, FLAGS.exp, resid, FLAGS.attention_head))
+    root_dir = os.path.join(home, "outputs", FLAGS.dataset, FLAGS.seed, FLAGS.exp)
+    df = pd.DataFrame(collate_validation_accuracy(root_dir, FLAGS.seed, FLAGS.dataset, FLAGS.model, FLAGS.exp, resid, FLAGS.attention_head))
     df['Step'] = pd.to_numeric(df['Step'])
     df['Layer'] = pd.to_numeric( df['Layer'].apply(lambda x: x.split("-")[1]))
     df = df.pivot(columns='Step', index='Layer', values=FLAGS.metric)
@@ -235,7 +235,7 @@ def main(FLAGS):
         output_filename = os.path.join(root_dir, "components", f"{FLAGS.metric.replace(' ', '_')}_heatmap{'' if resid else '_out'}{'_head_'+str(FLAGS.attention_head) if FLAGS.attention_head is not None else ''}.csv")
       df.to_csv(output_filename, index=True, header=True, sep='\t')
   else:
-    path_to_df = os.path.join(home, "outputs", FLAGS.path_to_df)
+    path_to_df = os.path.join(home, "outputs", FLAGS.seed, FLAGS.path_to_df)
     root_dir = os.path.dirname(path_to_df)
     df = pd.read_csv(path_to_df, sep='\t', index_col=0)
     df.sort_index(axis=0, inplace=True, ascending=False)
@@ -313,5 +313,6 @@ if __name__ == "__main__":
   argparser.add_argument("--gen-figure", type=str, default="False")
   argparser.add_argument("--resid", type=str, default="True")
   argparser.add_argument("--attention-head", type=int, default=None)
+  argparser.add_argument("--seed", type=str, default="seed_0")
   FLAGS = argparser.parse_args()
   main(FLAGS)

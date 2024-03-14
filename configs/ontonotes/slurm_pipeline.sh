@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=ontonotes
-#SBATCH --output=outputs/ontonotes/seed_1/slurm_out/log_%a.out
-#SBATCH --error=outputs/ontonotes/seed_1/slurm_out/log_%a.err
+#SBATCH --output=outputs/ontonotes/seed_2/slurm_out/log_%a.out
+#SBATCH --error=outputs/ontonotes/seed_2/slurm_out/log_%a.err
 #SBATCH --array=0-71%72
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
@@ -10,7 +10,7 @@
 
 DATE=$(date +%m-%d)
 RESID=True
-SEED=seed_1
+SEED=seed_2
 
 export LEARNING_DYNAMICS_HOME=/users/sanand14/data/sanand14/learning_dynamics
 export EXPERIMENT_SRC_DIR=$LEARNING_DYNAMICS_HOME/src/experiments
@@ -38,9 +38,9 @@ echo "Running Experiment with step: $step and type: $type and seed $SEED and res
 for layer in {0..12}; do
     dirhere=$EXPERIMENT_CONFIG_DIR/${SEED}_step_${step}
     mkdir -p $dirhere
-    if [[ "$layer" -eq 0 && "$type" == "ner" ]]; then
-        python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ontonotes --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True  --resid $RESID
-    else
+    # if [[ "$layer" -eq 0 && "$type" == "ner" ]]; then
+    #     python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ontonotes --model-name google/multiberts-seed_0-step_${step}k --layer-index $layer --compute-embeddings True  --resid $RESID
+    # else
         python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ontonotes --model-name google/multiberts-${SEED}-step_${step}k --layer-index $layer --compute-embeddings False  --resid $RESID
     # fi
     cat << EOF > $dirhere/${type}_${layer}.yaml

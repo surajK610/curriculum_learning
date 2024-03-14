@@ -29,6 +29,4 @@ echo "Running Experiment with step: $step and seed $SEED with residual $RESID"
 
 dirhere=$EXPERIMENT_CONFIG_DIR/${SEED}_step_${step}
 mkdir -p $dirhere
-if [[ "$layer" -eq 0 && "$type" == "depth" ]]; then
-    python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name $type --dataset ptb --model-name google/multiberts-${SEED}-step_${step}k --layer-index $layer --compute-embeddings True  --resid $RESID
-else
+python3 $EXPERIMENT_SRC_DIR/utils/data_gen.py --task-name depth --dataset ptb --model-name google/multiberts-${SEED}-step_${step}k --layer-index 0 --compute-embeddings True  --resid $RESID

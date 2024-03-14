@@ -75,7 +75,7 @@ def generate_heatmaps_zipf(folder_path, output_path):
     root_directory = 'outputs/toy_model/'
     csv_files = []
     for root, dirs, files in os.walk(root_directory):
-        if os.path.basename(root).startswith('zipf-'):
+        if os.path.basename(root).startswith('zipfbb-'):
             for file in files:
                 if file.endswith('probing_results.csv') and 'old' not in root and 'old_params' not in root:
                     csv_files.append(os.path.join(root, file))

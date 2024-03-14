@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=en_ewt-ud_gen_data
-#SBATCH --output=outputs/en_ewt-ud/seed_1/slurm_out/log_%a.out
-#SBATCH --error=outputs/en_ewt-ud/seed_1/slurm_out/log_%a.err
+#SBATCH --output=outputs/en_ewt-ud/seed_2/slurm_out/log_%a.out
+#SBATCH --error=outputs/en_ewt-ud/seed_2/slurm_out/log_%a.err
 #SBATCH --array=0-23%24
 #SBATCH --time=12:00:00
 #SBATCH --mem=64G
@@ -10,7 +10,7 @@
 
 DATE=$(date +%m-%d)
 RESID=True
-SEED=seed_1
+SEED=seed_2
 
 export LEARNING_DYNAMICS_HOME=/users/sanand14/data/sanand14/learning_dynamics
 export EXPERIMENT_SRC_DIR=$LEARNING_DYNAMICS_HOME/src/experiments
