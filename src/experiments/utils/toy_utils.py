@@ -87,25 +87,36 @@ class POSVocabGenerator:
     adj_tokens: List[int] = field(default_factory=list)
     random_tokens: List[int] = field(default_factory=list)
     amb_tokens: List[int] = field(default_factory=list)
+    amb_nouns: List[int] = field(default_factory=list)
+    amb_adjs: List[int] = field(default_factory=list)
+    a: float = 1.5
     
-    def parameterize_pos_vocab(self, num_pos_tokens: int, num_random_tokens: int, prop_amb=0.0, bins=10, tail_only=False):
+    def parameterize_pos_vocab(self, num_pos_tokens: int, num_random_tokens: int, prop_amb=0.0, bins=10, a=1.5, tail_only=False):
         assert num_pos_tokens % 2 == 0, "Number of POS tokens must be even"
         self.special_token_dict_pos = {'cop': num_pos_tokens, 'mask': num_pos_tokens + 1}
         self.noun_tokens = list(range(num_pos_tokens // 2))
         self.adj_tokens = list(range(num_pos_tokens // 2, num_pos_tokens))
+        self.a = a
         
+        bins_use = bins//2 # bc divided among nouns and adjs
         def choose_amb_tokens(lst):
-            bin_size = len(lst) // bins
-            binned = [lst[i*bin_size:(i+1)*bin_size] for i in range(bins)]
-            binned[-1].extend(lst[bins*bin_size:])
+            bin_size = len(lst) // bins_use
+            binned = [lst[i*bin_size:(i+1)*bin_size] for i in range(bins_use)]
+            binned[-1].extend(lst[bins_use*bin_size:])
             selected = [np.random.choice(bin_, size=int(np.ceil(len(bin_) * prop_amb)), replace=False).tolist() for bin_ in binned]
             selected = list(itertools.chain.from_iterable(selected))
             return selected
     
         if tail_only:
-            self.amb_tokens = self.noun_tokens[int(-len(self.noun_tokens) * prop_amb):] + self.adj_tokens[int(-len(self.adj_tokens) * prop_amb):]
+            self.amb_nouns = self.noun_tokens[int(-len(self.noun_tokens) * prop_amb):]
+            self.amb_adjs = self.adj_tokens[int(-len(self.adj_tokens) * prop_amb):]
         else:
-            self.amb_tokens = choose_amb_tokens(self.noun_tokens) + choose_amb_tokens(self.adj_tokens)
+            self.amb_nouns = choose_amb_tokens(self.noun_tokens)
+            self.amb_adjs = choose_amb_tokens(self.adj_tokens)
+            
+        self.amb_nouns = sorted(self.amb_nouns)
+        self.amb_adjs = sorted(self.amb_adjs)
+        self.amb_tokens = self.amb_nouns + self.amb_adjs
         print(self.amb_tokens)
         self.random_tokens = list(range(num_pos_tokens + 2, num_pos_tokens + 2 + num_random_tokens))
 
@@ -118,15 +129,20 @@ class POSVocabGenerator:
         assert type in ['noun', 'adj'], "type not found"
         tokens = self.noun_tokens if type == 'noun' else self.adj_tokens
         return random.choice(tokens)
-
-    def zipfian(self, type='noun', a=1.5):
+    
+    def zipfian(self, type='noun'):
         assert type in ['noun', 'adj'], "type not found"
         tokens = self.noun_tokens if type == 'noun' else self.adj_tokens
-        map = {k: v for k, v in enumerate(tokens)}
-        value = np.random.zipf(a)
+        return self._zipfian(tokens)
+
+    def _zipfian(self, set):
+        map = {k: v for k, v in enumerate(set)}
+        value = np.random.zipf(self.a)
         while value not in map:
-            value = np.random.zipf(a)
+            value = np.random.zipf(self.a)
         return map[value]
+    
+    ## amb token gotten - 50% of the time it's kept, 50% of time it's replaced with a random token
     
     def get_vocab_tokens(self):
         return len(self.noun_tokens + self.adj_tokens + self.random_tokens) + len(self.special_token_dict_pos)
@@ -137,6 +153,20 @@ class POSVocabGenerator:
         
         def get_sample_func_upd(sample_func):
             ## random embeddings
+            def tmp_sample_func(type):
+                if type == 'noun':
+                    noun = sample_func('noun')
+                    if noun in self.amb_nouns:
+                        if random.random() > 0.5:
+                            return self._zipfian(set=self.amb_adjs)
+                    return noun
+                else:
+                    adj = sample_func('adj')
+                    if adj in self.amb_adjs:
+                        if random.random() > 0.5:
+                            return self._zipfian(set=self.amb_nouns)
+                    return adj
+                  
             if random_v:
                 if len(self.random_tokens) == 0:
                     raise ValueError('No random tokens found')
@@ -171,8 +201,9 @@ class POSVocabGenerator:
                         return sample_func(type)
                     else:
                         return sample_func('noun') if type == 'adj' else sample_func('adj')
-                return tmp_func            
-            return sample_func
+                return tmp_func    
+            
+            return tmp_sample_func
 
         sample_func_upd = get_sample_func_upd(sample_func)
 

@@ -12,6 +12,8 @@ import os
 import json
 import pandas as pd
 
+from kneed.knee_locator import KneeLocator
+
 layer_list = ['layer-0', 'layer-1', 'layer-2', 
               'layer-3', 'layer-4', 'layer-5', 
               'layer-6', 'layer-7', 'layer-8', 
@@ -31,6 +33,29 @@ paths_list = [
 ]
 
 layer_name_dict = {k:f'encoder.layer.{int(k.split("-")[1]) - 1}' if k != 'layer-0' else 'embeddings' for k in layer_list}
+
+
+def get_pushdown(df):
+  layer_knees = {}
+  min_knee, max_knee, sum_diffs = 100000, 0, 0
+  x = df['Step']
+  df['Layer'] = df['Layer'].apply(lambda x: int(x.split("-")[1]))
+  df.index = df['Layer']
+  df.drop('Layer', axis=1, inplace=True)
+  
+  for idx in df.index:
+    y = df.iloc[idx]
+    layer_knees[idx] = KneeLocator(x, y).knee
+    if layer_knees[idx] < min_knee:
+      min_knee = layer_knees[idx]
+    if layer_knees[idx] > max_knee:
+      max_knee = layer_knees[idx]
+  
+  for idx in range(1, len(layer_knees)):
+    sum_diffs += layer_knees[idx] - layer_knees[idx-1]
+  
+  return min_knee, max_knee, sum_diffs
+
 
 def parse_val_acc_epoch(file_path):
     with open(file_path, 'r') as file:

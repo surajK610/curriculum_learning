@@ -186,38 +186,38 @@ class TrainingPipeline:
         ax.grid(True)
         
     def _prepare_dataloaders(self):
-        sample_func = lambda type: self.vocab_gen.zipfian(type, a=self.a) if self.sample_func == 'zipfian' else lambda type: self.vocab_gen.uniform(type)
+        sample_func = lambda type: self.vocab_gen.zipfian(type) if self.sample_func == 'zipfian' else lambda type: self.vocab_gen.uniform(type)
         inputs_t, labels_t = self.vocab_gen.create_dataset_task_pos(self.num_train, sample_func=sample_func, device=self.device)
         inputs_v, labels_v = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, device=self.device)
         inputs_e, labels_e = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, tail_end=True, device=self.device)
         inputs_s, labels_s = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, device=self.device)
         inputs_st, labels_st = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, tail_end=True, device=self.device)
-        #inputs_r, labels_r = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, random_v=True, device=self.device)
+        inputs_r, labels_r = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, random_v=True, device=self.device)
         
-        # for random_v in self.vocab_gen.random_tokens:
-        #     values = random.choice(self.vocab_gen.noun_tokens + self.vocab_gen.adj_tokens, 10, replace=False)
-        #     self.model.bert.embeddings.word_embeddings.weight.data[random_v] = torch.mean(self.model.bert.embeddings.word_embeddings.weight.data[values], axis=0)
+        for random_v in self.vocab_gen.random_tokens:
+            values = np.random.choice(self.vocab_gen.noun_tokens + self.vocab_gen.adj_tokens, 10, replace=False).tolist()
+            self.model.bert.embeddings.word_embeddings.weight.data[random_v] = torch.mean(self.model.bert.embeddings.word_embeddings.weight.data[values], axis=0)
         
         train_dataset = TensorDataset(inputs_t.detach(), labels_t)
         val_dataset = TensorDataset(inputs_v.detach(), labels_v)
         tail_end_val_dataset = TensorDataset(inputs_e.detach(), labels_e)
         switch_val_dataset = TensorDataset(inputs_s.detach(), labels_s)
         tail_switch_val_dataset = TensorDataset(inputs_st.detach(), labels_st)
-        #random_val_dataset = TensorDataset(inputs_r.detach(), labels_r)
+        random_val_dataset = TensorDataset(inputs_r.detach(), labels_r)
         
         train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=0)
         val_dataloader = DataLoader(val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         tail_end_val_dataloader = DataLoader(tail_end_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         switch_dataloader = DataLoader(switch_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         tail_switch_dataloader = DataLoader(tail_switch_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
-        #random_dataloader = DataLoader(random_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+        random_dataloader = DataLoader(random_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         
         test_dataloader = {
             'val': val_dataloader,
             'tail': tail_end_val_dataloader,
             'switch': switch_dataloader, 
             'tail_switch': tail_switch_dataloader,
-            #'random': random_dataloader
+            'random': random_dataloader
         }
         if self.prop_amb > 0:
             inputs_na, labels_na = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, non_amb_only=True, device=self.device)
@@ -283,7 +283,7 @@ def main(args):
     
     ## SETTING UP TASK
     dset_gen = POSVocabGenerator()
-    dset_gen.parameterize_pos_vocab(args.vocab_size, num_random, prop_amb=args.prop_amb, bins=args.bins, tail_only=False)
+    dset_gen.parameterize_pos_vocab(args.vocab_size, num_random, prop_amb=args.prop_amb, bins=args.bins, tail_only=False, a=args.a)
     
     ## SETTING UP MODEL
     config = BertConfig(
@@ -312,13 +312,14 @@ def main(args):
         num_val=10_000,
         step_eval=step_eval,
         name=None, ## does not save model during training
-        pca=['val', 'tail', 'random'],
+        pca=[],#['val', 'tail', 'random'],
         hist={},
         probe_results={},
         a=args.a,
         prop_amb=args.prop_amb,
         bins=args.bins,
-        sample_func=args.sample_func)
+        sample_func=args.sample_func
+        )
         
     hist, probing_results = pipeline.train_loop()
     

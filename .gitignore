@@ -1,7 +1,9 @@
 *__pycache__*
 /venv
 /venv-3090
+/test
 data/
+toy_model.log
 outputs/
 datasets/
 figures/

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=toy_model_zipf_ambr
-#SBATCH --output=outputs/toy_model/slurm_out/logz_%a.out
-#SBATCH --error=outputs/toy_model/slurm_out/logz_%a.err
+#SBATCH --output=outputs/toy_model/slurm_out/log_%a.out
+#SBATCH --error=outputs/toy_model/slurm_out/log_%a.err
 #SBATCH --array=0-47%48
 #SBATCH --time=24:00:00
 #SBATCH --mem=64G
