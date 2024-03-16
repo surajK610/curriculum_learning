@@ -142,16 +142,21 @@ def main(FLAGS):
   print(resid)
   if FLAGS.gen_figure == 'True':
     file_paths = {
+      'pythia_syntax': [
+        'outputs/en_ewt-ud/seed_0/cpos/Val_Acc_pythia.csv',
+        'outputs/en_ewt-ud/seed_0/fpos/Val_Acc_pythia.csv',
+        'outputs/en_ewt-ud/seed_0/dep/Val_Acc_pythia.csv'
+      ],
       'semantic':
-        ['outputs/en_ewt-ud/cpos/Val_Acc.csv',
-        'outputs/en_ewt-ud/fpos/Val_Acc.csv',
-        'outputs/ontonotes/ner/Val_Acc.csv'],
+        ['outputs/en_ewt-ud/seed_0/cpos/Val_Acc.csv',
+        'outputs/en_ewt-ud/seed_0/fpos/Val_Acc.csv',
+        'outputs/ontonotes/seed_0/ner/Val_Acc.csv'],
       'syntax':
-        ['outputs/ontonotes/phrase_start/Val_Acc.csv',
-        'outputs/ontonotes/phrase_end/Val_Acc.csv',
-        'outputs/en_ewt-ud/dep/Val_Acc.csv',
-        'outputs/ptb_3/depth/Root_Acc.csv',
-        'outputs/ptb_3/distance/UUAS.csv'
+        ['outputs/ontonotes/seed_0/phrase_start/Val_Acc.csv',
+        'outputs/ontonotes/seed_0/phrase_end/Val_Acc.csv',
+        'outputs/en_ewt-ud/seed_0/dep/Val_Acc.csv',
+        'outputs/ptb_3/seed_0/depth/Root_Acc.csv',
+        'outputs/ptb_3/seed_0/distance/UUAS.csv'
         ],
       'algorithmic':
         ['outputs/aheads/duplicate_token_head/Val_Acc.csv', 
@@ -166,7 +171,7 @@ def main(FLAGS):
     for key, fps in file_paths.items():
       print(key)
       n = len(fps)
-      titles = [s.split("/")[2] for s in fps]
+      titles = [s.split("/")[3] for s in fps]
       if key == 'algorithmic':
         titles = ['dup', 'ind', 'prev']
       elif key == 'syntax':
@@ -176,6 +181,10 @@ def main(FLAGS):
 
       for i, (ax, df, title) in enumerate(zip(axs, dataframes, titles)):
           df.index = df.index[::-1]
+          if 'pythia' in fps[i]:
+            cols = [col for col in df.columns if int(col) >= 64]
+            df = df[cols]
+            
           if not resid:
             df = df[['0', '20', '40', '60', '80', '100', '200', '1000', '1400', '1600', '1800', '2000']]
             # just for now to ensure consistency of step samples
