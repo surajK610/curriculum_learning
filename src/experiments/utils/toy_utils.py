@@ -86,10 +86,13 @@ class POSVocabGenerator:
     noun_tokens: List[int] = field(default_factory=list)
     adj_tokens: List[int] = field(default_factory=list)
     random_tokens: List[int] = field(default_factory=list)
+    random_adjs: List[int] = field(default_factory=list)
+    random_nouns: List[int] = field(default_factory=list)
     amb_tokens: List[int] = field(default_factory=list)
     amb_nouns: List[int] = field(default_factory=list)
     amb_adjs: List[int] = field(default_factory=list)
     a: float = 1.5
+    bins: int = 10
     
     def parameterize_pos_vocab(self, num_pos_tokens: int, num_random_tokens: int, prop_amb=0.0, bins=10, a=1.5, tail_only=False):
         assert num_pos_tokens % 2 == 0, "Number of POS tokens must be even"
@@ -97,6 +100,7 @@ class POSVocabGenerator:
         self.noun_tokens = list(range(num_pos_tokens // 2))
         self.adj_tokens = list(range(num_pos_tokens // 2, num_pos_tokens))
         self.a = a
+        self.bins = bins
         
         bins_use = bins//2 # bc divided among nouns and adjs
         def choose_amb_tokens(lst):
@@ -118,7 +122,10 @@ class POSVocabGenerator:
         self.amb_adjs = sorted(self.amb_adjs)
         self.amb_tokens = self.amb_nouns + self.amb_adjs
         print(self.amb_tokens)
+        
         self.random_tokens = list(range(num_pos_tokens + 2, num_pos_tokens + 2 + num_random_tokens))
+        self.random_nouns = self.random_tokens[:num_random_tokens // 2]
+        self.random_adjs = self.random_tokens[num_random_tokens // 2:]
 
     def tail_end_z(self, type='noun'):
         assert type in ['noun', 'adj'], "type not found"
@@ -147,10 +154,13 @@ class POSVocabGenerator:
     def get_vocab_tokens(self):
         return len(self.noun_tokens + self.adj_tokens + self.random_tokens) + len(self.special_token_dict_pos)
 
-    def create_dataset_task_pos(self, num_examples: int, sample_func: Callable = zipfian, prop_amb_all=0.0, tail_end=False, switch=False, random_v=False, amb_only=False, non_amb_only=False, device=None) -> Tuple[List[List[int]], List[List[int]]]:
+    
+    def create_dataset_task_pos(self, num_examples: int, sample_func: Callable = zipfian, prop_amb_all=0.0, tail_end=False, switch=False, random_v=False, holdout_once=False, holdout=False, amb_only=False, non_amb_only=False, cbin=None, device=None) -> Tuple[List[List[int]], List[List[int]]]:
         dataset = []
         labels = []
-        
+        holdout_noun_set =self.random_nouns.copy()
+        holdout_adj_set = self.random_adjs.copy()
+                
         def get_sample_func_upd(sample_func):
             ## random embeddings
             def tmp_sample_func(type):
@@ -171,6 +181,29 @@ class POSVocabGenerator:
                 if len(self.random_tokens) == 0:
                     raise ValueError('No random tokens found')
                 return lambda type: random.choice(self.random_tokens)
+            
+            ## switch and holdout tokens 
+            if switch and holdout:
+                return lambda type: random.choice(self.random_nouns) if type == 'adj' else random.choice(self.random_adjs)
+            ## holdout tokens
+            if holdout:
+                return lambda type: random.choice(self.random_adjs) if type == 'adj' else random.choice(self.random_nouns)
+            ## holdout seen once
+            if holdout_once:
+                def tmp_func_h(type):
+                    if len(holdout_noun_set) == 0 and len(holdout_adj_set) == 0:
+                        return None, False
+                    if type == 'noun':
+                        token = random.choice(holdout_noun_set) if len(holdout_noun_set) > 0 else random.choice(self.random_nouns)
+                        holdout_noun_set.remove(token)
+                    else:
+                        token = random.choice(holdout_adj_set) if len(holdout_adj_set) > 0 else random.choice(self.random_adjs)
+                        holdout_adj_set.remove(token)
+                
+                    if len(holdout_noun_set) > 0 and len(holdout_adj_set) > 0:
+                        return token, False
+                    return token, True
+                return tmp_func_h
             ## switch and tail
             if switch and tail_end:
                 return lambda type: self.tail_end_z('noun') if type == 'adj' else self.tail_end_z('adj')
@@ -180,6 +213,23 @@ class POSVocabGenerator:
             ## just tail end of distribution (10% tokens by number)
             if tail_end:
                 return self.tail_end_z
+            
+            if amb_only and cbin is not None:
+                bin_size = len(self.amb_tokens) // (self.bins)
+                print("bin maht", len(self.amb_tokens), self.bins, bin_size, cbin)
+                lambda type: random.choice((self.amb_adjs + self.amb_nouns)[bin_size*cbin:bin_size*(cbin+1)])
+             
+            if non_amb_only and cbin is not None:
+                def tmp_func_na(type):
+                    bin_size = len(self.noun_tokens + self.adj_tokens) // (self.bins) // 2
+                    while True:
+                        if type == 'noun':
+                            token = random.choice(self.noun_tokens[bin_size*cbin:bin_size*(cbin+1)])
+                        else:
+                            token = random.choice(self.adj_tokens[bin_size*cbin:bin_size*(cbin+1)])
+                        if token not in self.amb_tokens:
+                            return token
+                return tmp_func_na
             ## ambigous tokens
             if amb_only:
                 return lambda type: random.choice(self.amb_tokens)
@@ -206,27 +256,58 @@ class POSVocabGenerator:
             return tmp_sample_func
 
         sample_func_upd = get_sample_func_upd(sample_func)
-
-        for _ in range(num_examples):
-            rand_val = random.random()
-            adj, noun = sample_func_upd('adj'), sample_func_upd('noun')
-            seq = [self.special_token_dict_pos['cop'], adj, noun] if rand_val < 0.50 else [noun, self.special_token_dict_pos['cop'], adj]
-            seq.extend([adj, adj, adj, adj] if rand_val < 0.25 or rand_val >= 0.75 else [noun, adj, noun, noun])
-            label_seq = seq.copy()
-
-            for i in range(len(seq)):
-                if i >= len(seq) - 3:
-                    seq[i] = self.special_token_dict_pos['mask']
-                else:
-                    label_seq[i] = -100
-
-            dataset.append(seq)
-            labels.append(label_seq)
         
+        if not holdout_once:
+            for _ in range(num_examples):
+                rand_val = random.random()
+                adj, noun = sample_func_upd('adj'), sample_func_upd('noun')
+                seq = [self.special_token_dict_pos['cop'], adj, noun] if rand_val < 0.50 else [noun, self.special_token_dict_pos['cop'], adj]
+                seq.extend([adj, adj, adj, adj] if rand_val < 0.25 or rand_val >= 0.75 else [noun, adj, noun, noun])
+                label_seq = seq.copy()
+
+                for i in range(len(seq)):
+                    if i >= len(seq) - 3:
+                        seq[i] = self.special_token_dict_pos['mask']
+                    else:
+                        label_seq[i] = -100
+
+                dataset.append(seq)
+                labels.append(label_seq)
+        else:
+            ## query every token once
+            still_tokens_left = True
+            while still_tokens_left:
+                rand_val = random.random()
+                adj, _ =  sample_func_upd('adj')
+                noun, still_tokens_left = sample_func_upd('noun')
+                seq_adj = [self.special_token_dict_pos['cop'], adj, noun] if rand_val < 0.50 else [noun, self.special_token_dict_pos['cop'], adj]
+                seq_noun = seq_adj.copy()
+                
+                seq_adj.extend([adj, adj, adj, adj])
+                seq_noun.extend([noun, adj, noun, noun])
+                label_seq_adj = seq_adj.copy()
+                label_seq_noun = seq_noun.copy()
+                
+                for i in range(len(seq_adj)):
+                    if i >= len(seq_adj) - 3:
+                        seq_adj[i] = self.special_token_dict_pos['mask']
+                        seq_noun[i] = self.special_token_dict_pos['mask']
+                    else:
+                        label_seq_adj[i] = -100
+                        label_seq_noun[i] = -100
+
+                dataset.append(seq_adj)
+                labels.append(label_seq_adj)
+                
+                dataset.append(seq_noun)
+                labels.append(label_seq_noun)
+
+            print("DS", dataset)
+            print("LS", labels)
         if device is not None:
             dataset = torch.tensor(dataset, device=device)
             labels = torch.tensor(labels, device=device)
-
+        
         return dataset, labels
   
 @dataclass

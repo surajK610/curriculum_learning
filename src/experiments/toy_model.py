@@ -30,6 +30,9 @@ import matplotlib.pyplot as plt
 import matplotlib
 from transformers import BertConfig, BertForMaskedLM, AdamW
 
+
+REINIT_RANDOM = True
+
 ## ------------------------------------------ TRAINING ----------------------------------
 
 @dataclass
@@ -186,23 +189,27 @@ class TrainingPipeline:
         ax.grid(True)
         
     def _prepare_dataloaders(self):
+        test_dataloader = {}
+        
         sample_func = lambda type: self.vocab_gen.zipfian(type) if self.sample_func == 'zipfian' else lambda type: self.vocab_gen.uniform(type)
         inputs_t, labels_t = self.vocab_gen.create_dataset_task_pos(self.num_train, sample_func=sample_func, device=self.device)
         inputs_v, labels_v = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, device=self.device)
         inputs_e, labels_e = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, tail_end=True, device=self.device)
         inputs_s, labels_s = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, device=self.device)
         inputs_st, labels_st = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, tail_end=True, device=self.device)
-        # inputs_r, labels_r = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, random_v=True, device=self.device)
+        inputs_ho, labels_ho = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, holdout_once=True, device=self.device)
+        inputs_h, labels_h = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, holdout=True, device=self.device)
+        inputs_sh, labels_sh = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, holdout=True, device=self.device)
         
-        # for random_v in self.vocab_gen.random_tokens:
-        #     values = np.random.choice(self.vocab_gen.noun_tokens + self.vocab_gen.adj_tokens, 10, replace=False).tolist()
-        #     self.model.bert.embeddings.word_embeddings.weight.data[random_v] = torch.mean(self.model.bert.embeddings.word_embeddings.weight.data[values], axis=0)
         
         train_dataset = TensorDataset(inputs_t.detach(), labels_t)
         val_dataset = TensorDataset(inputs_v.detach(), labels_v)
         tail_end_val_dataset = TensorDataset(inputs_e.detach(), labels_e)
         switch_val_dataset = TensorDataset(inputs_s.detach(), labels_s)
         tail_switch_val_dataset = TensorDataset(inputs_st.detach(), labels_st)
+        holdout_once_val_dataset = TensorDataset(inputs_ho.detach(), labels_ho)
+        holdout_val_dataset = TensorDataset(inputs_h.detach(), labels_h)
+        switch_holdout_val_dataset = TensorDataset(inputs_sh.detach(), labels_sh)
         # random_val_dataset = TensorDataset(inputs_r.detach(), labels_r)
         
         train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=0)
@@ -210,24 +217,40 @@ class TrainingPipeline:
         tail_end_val_dataloader = DataLoader(tail_end_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         switch_dataloader = DataLoader(switch_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         tail_switch_dataloader = DataLoader(tail_switch_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+        holdout_once_dataloader = DataLoader(holdout_once_val_dataset, batch_size=self.batch_size, shuffle=True, num_workers=0)
+        holdout_dataloader = DataLoader(holdout_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+        switch_holdout_dataloader = DataLoader(switch_holdout_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         # random_dataloader = DataLoader(random_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         
-        test_dataloader = {
+        self.holdout_once_dataloader = holdout_once_dataloader
+        
+        test_dataloader.update({
             'val': val_dataloader,
             'tail': tail_end_val_dataloader,
             'switch': switch_dataloader, 
             'tail_switch': tail_switch_dataloader,
-            # 'random': random_dataloader
-        }
+            'holdout': holdout_dataloader,
+            'holdout_switch': switch_holdout_dataloader,
+        })
         if self.prop_amb > 0:
+            for cbin in range(self.vocab_gen.bins):
+                bin_amb, labels_am = self.vocab_gen.create_dataset_task_pos(self.num_val//self.vocab_gen.bins, sample_func=sample_func, cbin=cbin, amb_only=True, device=self.device)
+                bin_nonamb, labels_nam = self.vocab_gen.create_dataset_task_pos(self.num_val//self.vocab_gen.bins, sample_func=sample_func, cbin=cbin, non_amb_only=True, device=self.device)
+                
+                bin_amb_ds = TensorDataset(bin_amb.detach(), labels_am)
+                bin_nonamb_ds = TensorDataset(bin_nonamb.detach(), labels_nam)
+                
+                test_dataloader[f'bin_{cbin}_amb'] = DataLoader(bin_amb_ds, batch_size=self.batch_size, shuffle=False, num_workers=0)
+                test_dataloader[f'bin_{cbin}_nonamb'] = DataLoader(bin_nonamb_ds, batch_size=self.batch_size, shuffle=False, num_workers=0)
+                
             inputs_na, labels_na = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, non_amb_only=True, device=self.device)
             inputs_am, labels_am = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, amb_only=True, device=self.device)
             nonamb_val_dataset = TensorDataset(inputs_na.detach(), labels_na)
             amb_val_dataset = TensorDataset(inputs_am.detach(), labels_am)
             nonamb_val_dataloader = DataLoader(nonamb_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
             amb_val_dataloader = DataLoader(amb_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
-            test_dataloader['nonamb'] = nonamb_val_dataloader
-            test_dataloader['amb'] = amb_val_dataloader
+            test_dataloader['unif_nonamb'] = nonamb_val_dataloader
+            test_dataloader['unif_amb'] = amb_val_dataloader
             
         logging.debug("finished creating new dataloaders...")
         
@@ -261,22 +284,47 @@ class TrainingPipeline:
         if (isinstance(self.step_eval, int) and c_step % self.step_eval == 0) or (c_step in self.step_eval):
             for key, dataloader in self.test_dataloader.items():
                 print(f"Running validation for {key} at step {c_step}", flush=True)
-                if key != "random":
-                    self.hist[key][c_step] = self.val_loop(dataloader)
-                else:
-                    self.model.train()
-                    for batch in self.test_dataloader['random']:
-                        self.optimizer.zero_grad()
-                        loss, stats = self.step(batch, hard_acc=True)
-                        loss.backward()
-                        self.optimizer.step()
-                    self.hist[key][c_step] = self.val_loop(dataloader)
+                if key not in ["holdout", "holdout_switch", "random"]: ## these have their own eval
+                    self.hist[key][c_step] = self.val_loop(dataloader)['acc']            
                 if key in self.pca:
                     # print(f"Running PCA for {key} at step {c_step}", flush=True)
                     self.probe_results[key] = self.pca_pos(dataloader, f'Step {c_step}', c_step, probe_results=self.probe_results[key])
                 if self.name:
                     logging.debug(f"saving model at step {c_step}...")
                     torch.save(self.model.state_dict(), f'models/{self.name}_step_{c_step}.pth')
+            if "holdout" in self.test_dataloader:
+                self._holdout_eval(c_step)
+            if "random" in self.test_dataloader:
+                self._random_eval(c_step)
+                    
+    def _holdout_eval(self, c_step):
+        logging.debug(f"running random evaluation at step {c_step}...")
+        if not hasattr(self, 'initial_holdout_embs'):
+            self.initial_random_embs = self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens].clone()
+            
+        ## random initialization of embeddings from init distribution
+        self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens] = self.initial_random_embs
+        self.model.train()
+        
+        ## see everything once at least
+        # for epoch in range(5):
+        for batch in self.test_dataloader['holdout']:
+            self.optimizer.zero_grad()
+            loss, stats = self.step(batch, hard_acc=True)
+            loss.backward()
+            self.optimizer.step()
+        
+        self.hist['holdout'][c_step] = self.val_loop(self.test_dataloader['holdout'])
+        self.hist['holdout_switch'][c_step] = self.val_loop(self.test_dataloader['holdout_switch'])
+
+    def _random_eval(self, c_step):
+        logging.debug(f"running random evaluation at step {c_step}...")
+        for random_v in self.vocab_gen.random_tokens:
+            ## weighted combination of current embedings
+            values = np.random.choice(self.vocab_gen.noun_tokens + self.vocab_gen.adj_tokens, 10, replace=False).tolist()   
+            self.model.bert.embeddings.word_embeddings.weight.data[random_v] = torch.mean(self.model.bert.embeddings.word_embeddings.weight.data[values], axis=0)
+        
+        self.hist['random'][c_step] = self.val_loop(self.test_dataloader['random'])
 
 def main(args):
     ## SETTING SEED
@@ -304,6 +352,7 @@ def main(args):
     )
     toy_bert_model = BertForMaskedLM(config).to(device)
     optimizer = torch.optim.AdamW(toy_bert_model.parameters(), lr=5e-5, weight_decay=args.weight_decay) 
+    print(optimizer.state_dict()['param_groups'][0]['weight_decay'], flush=True)
     step_eval = list(range(0, 1000, 20)) + list(range(1000, 30000, 100))
     max_num_steps = args.dataset_size *  args.epochs/args.batch_size
     print('Max number of steps is ', max_num_steps, flush=True)
@@ -340,10 +389,10 @@ def main(args):
     print('saving results...', flush=True)
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
-    for key, hist_val in hist.items():
-        hist_df = pd.DataFrame(hist_val)
-        hist_df.to_csv(os.path.join(output_dir, f'hist_{key}.csv'))
-    
+    # for key, hist_val in hist.items():
+    hist_df = pd.DataFrame(hist)
+    hist_df.to_csv(os.path.join(output_dir, f'hist.csv'))
+
     for key, probe_val in probing_results.items():
         df = pd.DataFrame(probe_val)
         df = df.transpose()
@@ -382,3 +431,4 @@ if __name__ == "__main__":
     parser.add_argument('--weight_decay', type=float, default=0.00, help='Weight decay for optimizer')
     args = parser.parse_args()
     main(args)
+    
