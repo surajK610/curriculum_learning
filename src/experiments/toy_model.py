@@ -314,8 +314,8 @@ class TrainingPipeline:
             loss.backward()
             self.optimizer.step()
         
-        self.hist['holdout'][c_step] = self.val_loop(self.test_dataloader['holdout'])
-        self.hist['holdout_switch'][c_step] = self.val_loop(self.test_dataloader['holdout_switch'])
+        self.hist['holdout'][c_step] = self.val_loop(self.test_dataloader['holdout'])['acc']
+        self.hist['holdout_switch'][c_step] = self.val_loop(self.test_dataloader['holdout_switch'])['acc']
 
     def _random_eval(self, c_step):
         logging.debug(f"running random evaluation at step {c_step}...")
