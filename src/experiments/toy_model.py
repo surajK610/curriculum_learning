@@ -197,7 +197,7 @@ class TrainingPipeline:
         inputs_e, labels_e = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, tail_end=True, device=self.device)
         inputs_s, labels_s = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, device=self.device)
         inputs_st, labels_st = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, tail_end=True, device=self.device)
-        inputs_ho, labels_ho = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, holdout_once=True, device=self.device)
+        inputs_ho, labels_ho = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, holdout_once=2, device=self.device)
         inputs_h, labels_h = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, holdout=True, device=self.device)
         inputs_sh, labels_sh = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, holdout=True, device=self.device)
         

@@ -158,8 +158,8 @@ class POSVocabGenerator:
     def create_dataset_task_pos(self, num_examples: int, sample_func: Callable = zipfian, prop_amb_all=0.0, tail_end=False, switch=False, random_v=False, holdout_once=False, holdout=False, amb_only=False, non_amb_only=False, cbin=None, device=None) -> Tuple[List[List[int]], List[List[int]]]:
         dataset = []
         labels = []
-        holdout_noun_set =self.random_nouns.copy()
-        holdout_adj_set = self.random_adjs.copy()
+        holdout_noun_set =self.random_nouns.copy() * int(holdout_once)
+        holdout_adj_set = self.random_adjs.copy() * int(holdout_once)
                 
         def get_sample_func_upd(sample_func):
             ## random embeddings
