@@ -24,6 +24,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments/utils')
 sys.path.append('/users/sanand14/data/sanand14/learning_dynamics/src/experiments')
+from utils.forgetting_utils import AdamEF
 from utils.toy_utils import bin_train_loop, create_dataloaders_bin, Probe, POSVocabGenerator
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
@@ -100,6 +101,7 @@ class TrainingPipeline:
                 stats.update(val_stats)
                 pbar.set_postfix(**stats)
                 self._evaluate_during_training(c_step)
+                self._forget_embeddings(c_step)
         return self.hist, self.probe_results
                 
     def val_loop(self, test_dataloader):
@@ -191,12 +193,12 @@ class TrainingPipeline:
     def _prepare_dataloaders(self):
         test_dataloader = {}
         
-        sample_func = lambda type: self.vocab_gen.zipfian(type) if self.sample_func == 'zipfian' else lambda type: self.vocab_gen.uniform(type)
+        sample_func = lambda type: self.vocab_gen.zipfian(type) 
+        if self.sample_func == 'uniform':
+            sample_func = lambda type: self.vocab_gen.uniform(type)
         inputs_t, labels_t = self.vocab_gen.create_dataset_task_pos(self.num_train, sample_func=sample_func, device=self.device)
         inputs_v, labels_v = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, device=self.device)
-        inputs_e, labels_e = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, tail_end=True, device=self.device)
         inputs_s, labels_s = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, device=self.device)
-        inputs_st, labels_st = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, tail_end=True, device=self.device)
         inputs_ho, labels_ho = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, holdout_once=2, device=self.device)
         inputs_h, labels_h = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, holdout=True, device=self.device)
         inputs_sh, labels_sh = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, holdout=True, device=self.device)
@@ -204,9 +206,7 @@ class TrainingPipeline:
         
         train_dataset = TensorDataset(inputs_t.detach(), labels_t)
         val_dataset = TensorDataset(inputs_v.detach(), labels_v)
-        tail_end_val_dataset = TensorDataset(inputs_e.detach(), labels_e)
         switch_val_dataset = TensorDataset(inputs_s.detach(), labels_s)
-        tail_switch_val_dataset = TensorDataset(inputs_st.detach(), labels_st)
         holdout_once_val_dataset = TensorDataset(inputs_ho.detach(), labels_ho)
         holdout_val_dataset = TensorDataset(inputs_h.detach(), labels_h)
         switch_holdout_val_dataset = TensorDataset(inputs_sh.detach(), labels_sh)
@@ -214,9 +214,7 @@ class TrainingPipeline:
         
         train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=0)
         val_dataloader = DataLoader(val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
-        tail_end_val_dataloader = DataLoader(tail_end_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         switch_dataloader = DataLoader(switch_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
-        tail_switch_dataloader = DataLoader(tail_switch_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         holdout_once_dataloader = DataLoader(holdout_once_val_dataset, batch_size=self.batch_size, shuffle=True, num_workers=0)
         holdout_dataloader = DataLoader(holdout_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
         switch_holdout_dataloader = DataLoader(switch_holdout_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
@@ -226,23 +224,22 @@ class TrainingPipeline:
         
         test_dataloader.update({
             'val': val_dataloader,
-            'tail': tail_end_val_dataloader,
             'switch': switch_dataloader, 
-            'tail_switch': tail_switch_dataloader,
             'holdout': holdout_dataloader,
             'holdout_switch': switch_holdout_dataloader,
         })
+        
+        if self.sample_func == 'zipfian':
+            inputs_e, labels_e = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, tail_end=True, device=self.device)
+            inputs_st, labels_st = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, switch=True, tail_end=True, device=self.device)
+            tail_switch_val_dataset = TensorDataset(inputs_st.detach(), labels_st)
+            tail_end_val_dataset = TensorDataset(inputs_e.detach(), labels_e)
+            tail_switch_dataloader = DataLoader(tail_switch_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+            tail_end_val_dataloader = DataLoader(tail_end_val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+            test_dataloader['tail'] = tail_end_val_dataloader
+            test_dataloader['tail_switch'] = tail_switch_dataloader
+            
         if self.prop_amb > 0:
-            for cbin in range(self.vocab_gen.bins):
-                bin_amb, labels_am = self.vocab_gen.create_dataset_task_pos(self.num_val//self.vocab_gen.bins, sample_func=sample_func, cbin=cbin, amb_only=True, device=self.device)
-                bin_nonamb, labels_nam = self.vocab_gen.create_dataset_task_pos(self.num_val//self.vocab_gen.bins, sample_func=sample_func, cbin=cbin, non_amb_only=True, device=self.device)
-                
-                bin_amb_ds = TensorDataset(bin_amb.detach(), labels_am)
-                bin_nonamb_ds = TensorDataset(bin_nonamb.detach(), labels_nam)
-                
-                test_dataloader[f'bin_{cbin}_amb'] = DataLoader(bin_amb_ds, batch_size=self.batch_size, shuffle=False, num_workers=0)
-                test_dataloader[f'bin_{cbin}_nonamb'] = DataLoader(bin_nonamb_ds, batch_size=self.batch_size, shuffle=False, num_workers=0)
-                
             inputs_na, labels_na = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, non_amb_only=True, device=self.device)
             inputs_am, labels_am = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, amb_only=True, device=self.device)
             nonamb_val_dataset = TensorDataset(inputs_na.detach(), labels_na)
@@ -252,40 +249,65 @@ class TrainingPipeline:
             test_dataloader['unif_nonamb'] = nonamb_val_dataloader
             test_dataloader['unif_amb'] = amb_val_dataloader
             
+            if self.sample_func == 'zipfian':
+                for cbin in range(self.vocab_gen.bins):
+                    bin_amb, labels_am = self.vocab_gen.create_dataset_task_pos(self.num_val//self.vocab_gen.bins, sample_func=sample_func, cbin=cbin, amb_only=True, device=self.device)
+                    bin_nonamb, labels_nam = self.vocab_gen.create_dataset_task_pos(self.num_val//self.vocab_gen.bins, sample_func=sample_func, cbin=cbin, non_amb_only=True, device=self.device)
+                    bin_nonamb_s, labels_nam_s = self.vocab_gen.create_dataset_task_pos(self.num_val//self.vocab_gen.bins, sample_func=sample_func, cbin=cbin, non_amb_only=True, switch=True, device=self.device)
+                    bin_amb_ds = TensorDataset(bin_amb.detach(), labels_am)
+                    bin_nonamb_ds = TensorDataset(bin_nonamb.detach(), labels_nam)
+                    bin_nonamb_s_ds = TensorDataset(bin_nonamb_s.detach(), labels_nam_s)
+                    test_dataloader[f'bin_{cbin}_amb'] = DataLoader(bin_amb_ds, batch_size=self.batch_size, shuffle=False, num_workers=0)
+                    test_dataloader[f'bin_{cbin}_nonamb'] = DataLoader(bin_nonamb_ds, batch_size=self.batch_size, shuffle=False, num_workers=0)
+                    test_dataloader[f'bin_{cbin}_nonamb_switch'] = DataLoader(bin_nonamb_s_ds, batch_size=self.batch_size, shuffle=False, num_workers=0)
+            
         logging.debug("finished creating new dataloaders...")
         
         return train_dataloader, test_dataloader
+    
     
     def _prepare_logging(self):
         logging.debug("preparing logging...")
         if isinstance(self.test_dataloader, DataLoader):
             self.test_dataloader = {'val': test_dataloader}
-            self.hist = {'val': {}}
+            self.hist = {'val': {}, 'val_loss':{}}
             self.probe_results = {'val': defaultdict(list)}
         elif isinstance(self.test_dataloader, dict):
-            self.hist = {key: {} for key in self.test_dataloader.keys()}
+            self.hist = {key: {} for key in self.test_dataloader.keys()} 
+            self.hist['val_loss'] = {}
             self.probe_results = {key: defaultdict(list) for key in self.pca}
         elif isinstance(self.test_dataloader, tuple):
             if len(self.test_dataloader) == 3:
                 test_dataloader, tail_end_val_dataloader, switch_val_dataloader = test_dataloader
                 self.test_dataloader = {'val': test_dataloader, 'tail': tail_end_val_dataloader, 'switch': switch_val_dataloader}
                 self.hist = {key: {} for key in ['val', 'tail', 'switch']}
+                self.hist['val_loss'] = {}
                 self.probe_results = {key: defaultdict(list) for key in ['val', 'tail', 'switch']}
             elif len(test_dataloader) == 2:
                 test_dataloader, tail_end_val_dataloader = test_dataloader
                 self.test_dataloader = {'val': test_dataloader, 'tail': tail_end_val_dataloader}
                 self.hist = {key: {} for key in ['val', 'tail']}
+                self.hist['val_loss'] = {}
                 self.probe_results = {key: defaultdict(list) for key in ['val', 'tail']}
             else:
                 raise ValueError('Not recognized format for test_dataloader order/length')
     
+    def _forget_embeddings(self, c_step):
+        if hasattr(self.optimizer, 'clear_embed_every_K_updates') and self.optimizer.clear_embed_every_K_updates > 0:
+            if (isinstance(self.optimizer.clear_embed_every_K_updates, int) and c_step % self.optimizer.clear_embed_every_K_updates == 0):
+                print(f"Clearing embeddings at step {c_step}", flush=True)
+                self.model.bert.embeddings.word_embeddings.reset_parameters()
+                
     def _evaluate_during_training(self, c_step):
         logging.debug(f"evaluating during training step {c_step}...")
         if (isinstance(self.step_eval, int) and c_step % self.step_eval == 0) or (c_step in self.step_eval):
             for key, dataloader in self.test_dataloader.items():
                 print(f"Running validation for {key} at step {c_step}", flush=True)
                 if key not in ["holdout", "holdout_switch", "random"]: ## these have their own eval
-                    self.hist[key][c_step] = self.val_loop(dataloader)['acc']            
+                    metrics = self.val_loop(dataloader)
+                    self.hist[key][c_step] = metrics['acc']    
+                    if key == 'val':
+                        self.hist['val_loss'][c_step] = metrics['loss']
                 if key in self.pca:
                     # print(f"Running PCA for {key} at step {c_step}", flush=True)
                     self.probe_results[key] = self.pca_pos(dataloader, f'Step {c_step}', c_step, probe_results=self.probe_results[key])
@@ -308,7 +330,7 @@ class TrainingPipeline:
         
         ## see everything once at least
         # for epoch in range(5):
-        for batch in self.test_dataloader['holdout']:
+        for batch in self.holdout_once_dataloader:
             self.optimizer.zero_grad()
             loss, stats = self.step(batch, hard_acc=True)
             loss.backward()
@@ -335,12 +357,16 @@ def main(args):
     np.random.seed(args.seed)
     
     ## SETTING UP PARAMETERS
-    num_random = args.num_random if args.num_random is not None else args.dataset_size // 10
+    num_random = args.num_random if args.num_random is not None else args.vocab_size // 10
+    # never forget if negative
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     
     ## SETTING UP TASK
+    sample_func = args.sample_func
+    if args.a == 0: ## just easier for me to write for loop
+        sample_func = 'uniform'
     dset_gen = POSVocabGenerator()
-    dset_gen.parameterize_pos_vocab(args.vocab_size, num_random, prop_amb=args.prop_amb, bins=args.bins, tail_only=False, a=args.a)
+    dset_gen.parameterize_pos_vocab(args.vocab_size, num_random, prop_amb=args.prop_amb, bins=args.bins, tail_only=False, a=args.a, sample_func=sample_func)
     
     ## SETTING UP MODEL
     config = BertConfig(
@@ -351,11 +377,19 @@ def main(args):
         intermediate_size=args.intermediate_size, # 512
     )
     toy_bert_model = BertForMaskedLM(config).to(device)
-    optimizer = torch.optim.AdamW(toy_bert_model.parameters(), lr=5e-5, weight_decay=args.weight_decay) 
+    if args.forget_steps <= 0:
+        print('Using AdamW optimizer', flush=True)
+        optimizer = torch.optim.AdamW(toy_bert_model.parameters(), lr=5e-5, weight_decay=args.weight_decay) 
+    else:
+        print('Using AdamEF optimizer', flush=True)
+        optimizer = AdamEF(toy_bert_model.parameters(), lr=5e-5, lr_emb=5e-5, weight_decay=args.weight_decay, clear_embed_every_K_updates=args.forget_steps)
+        optimizer.embed_offset = list(filter(lambda p: p.requires_grad, toy_bert_model.parameters()))[0].numel()
+
     print(optimizer.state_dict()['param_groups'][0]['weight_decay'], flush=True)
     step_eval = list(range(0, 1000, 20)) + list(range(1000, 30000, 100))
     max_num_steps = args.dataset_size *  args.epochs/args.batch_size
     print('Max number of steps is ', max_num_steps, flush=True)
+    
     pipeline = TrainingPipeline(
         model=toy_bert_model,
         vocab_gen=dset_gen,
@@ -376,7 +410,7 @@ def main(args):
         a=args.a,
         prop_amb=args.prop_amb,
         bins=args.bins,
-        sample_func=args.sample_func
+        sample_func=sample_func
         )
         
     hist, probing_results = pipeline.train_loop()
@@ -429,6 +463,7 @@ if __name__ == "__main__":
     parser.add_argument('--prop_amb', type=float, default=0.0, help='Proportion of time noun or adj is switched in training')
     parser.add_argument('--bins', type=int, default=10, help='Number of bins for probing')
     parser.add_argument('--weight_decay', type=float, default=0.00, help='Weight decay for optimizer')
+    parser.add_argument('--forget_steps', type=int, default=-1, help='Number of steps to forget')
     args = parser.parse_args()
     main(args)
     
