@@ -357,7 +357,7 @@ def main(args):
     np.random.seed(args.seed)
     
     ## SETTING UP PARAMETERS
-    num_random = args.num_random if args.num_random is not None else args.vocab_size // 10
+    num_random = args.num_random if args.num_random is not None else args.dataset_size // 10
     # never forget if negative
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     

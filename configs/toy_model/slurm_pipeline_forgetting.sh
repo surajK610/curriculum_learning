@@ -2,7 +2,7 @@
 #SBATCH --job-name=toy_model_zipf_forg
 #SBATCH --output=outputs/toy_model/slurm_out/log_%a.out
 #SBATCH --error=outputs/toy_model/slurm_out/log_%a.err
-#SBATCH --array=0-3%30
+#SBATCH --array=0-4%30
 #SBATCH --time=24:00:00
 #SBATCH --mem=64G
 
@@ -18,7 +18,7 @@ source $LEARNING_DYNAMICS_HOME/venv/bin/activate
 # vocab_sizes=(100 1000 10000)
 # a_s=(1.0001 1.2 1.5)
 
-forgetting=(-1 100 1000 5000)
+forgetting=(-1 20 100 1000 5000)
 
 f_index=$SLURM_ARRAY_TASK_ID
 
