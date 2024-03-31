@@ -35,5 +35,5 @@ curr_vocab=${vocab_sizes[$vocab_index]}
 curr_a=${a_s[$a_index]}
 
 echo "Running with layer: 6, vocab: $curr_vocab, a: $curr_a, amb: $curr_amb"
-python3 $EXPERIMENT_SRC_DIR/toy_model.py --hidden_num_layers 6 --vocab_size $curr_vocab --a $curr_a --prop_amb $curr_amb --sample_func "zipfian" --hidden_size 64 --intermediate_size 128 --output_dir "outputs/toy_model/zipfr-amb_$curr_amb-vs_$curr_vocab-a_$curr_a" --weight_decay 0.01
+python3 $EXPERIMENT_SRC_DIR/toy_model.py --hidden_num_layers 6 --vocab_size $curr_vocab --a $curr_a --prop_amb $curr_amb --sample_func "zipfian" --hidden_size 64 --intermediate_size 128 --output_dir "outputs/toy_model/zipfw-amb_$curr_amb-vs_$curr_vocab-a_$curr_a" --weight_decay 0.01
 
