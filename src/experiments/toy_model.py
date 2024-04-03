@@ -127,12 +127,12 @@ class TrainingPipeline:
         labels, hidden_layers = [], defaultdict(list)
         
         def get_labels(examples, blabels):
-            if torch.all(examples[:, -4] <= self.adj_max):
+            if torch.all(examples[:, -4] <= self.adj_max) and self.prop_amb == 0:
                 assert ((examples[:, -4] < self.adj_min).float() == (examples[:, -4] != blabels[:, -3]).float()).all(), "Noun/Adj labels are not consistent"
         
             return (examples[:, -4] != blabels[:, -3]).float()
-                # random tokens if noun if not equal, adj if equal
-                
+            # random tokens if noun if not equal, adj if equal (this is what the use is)
+            
         # Enabling model to output hidden states
         self.model.config.output_hidden_states = True
         num_hidden_states = self.model.config.num_hidden_layers + 1
@@ -295,12 +295,13 @@ class TrainingPipeline:
     def _forget_embeddings(self, c_step):
         if hasattr(self.optimizer, 'clear_embed_every_K_updates') and self.optimizer.clear_embed_every_K_updates > 0:
             if (isinstance(self.optimizer.clear_embed_every_K_updates, int) and c_step % self.optimizer.clear_embed_every_K_updates == 0):
-                print(f"Clearing embeddings at step {c_step}", flush=True)
-                self.model.bert.embeddings.word_embeddings.reset_parameters()
+                if self.optimizer.stop_after is None or (isinstance(self.optimizer.stop_after, int) and c_step < self.optimizer.stop_after):
+                    print(f"Clearing embeddings at step {c_step}", flush=True)
+                    self.model.bert.embeddings.word_embeddings.reset_parameters()
                 
     def _evaluate_during_training(self, c_step):
         logging.debug(f"evaluating during training step {c_step}...")
-        if (isinstance(self.step_eval, int) and c_step % self.step_eval == 0) or (c_step in self.step_eval):
+        if (isinstance(self.step_eval, int) and c_step % self.step_eval == 0) or (isinstance(self.step_eval, (list, tuple)) and c_step in self.step_eval):
             for key, dataloader in self.test_dataloader.items():
                 print(f"Running validation for {key} at step {c_step}", flush=True)
                 if key not in ["holdout", "holdout_switch", "random"]: ## these have their own eval
@@ -358,6 +359,7 @@ def main(args):
     
     ## SETTING UP PARAMETERS
     num_random = args.num_random if args.num_random is not None else args.vocab_size // 10
+    
     # never forget if negative
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     
@@ -381,12 +383,14 @@ def main(args):
         print('Using AdamW optimizer', flush=True)
         optimizer = torch.optim.AdamW(toy_bert_model.parameters(), lr=5e-5, weight_decay=args.weight_decay) 
     else:
-        print('Using AdamEF optimizer', flush=True)
+        print('Using AdamEF optimizer clearing every', args.forget_steps, 'stopping after', args.stop_forgetting_after, flush=True)
         optimizer = AdamEF(toy_bert_model.parameters(), lr=5e-5, lr_emb=5e-5, weight_decay=args.weight_decay, clear_embed_every_K_updates=args.forget_steps)
+        optimizer.stop_after = args.stop_forgetting_after
         optimizer.embed_offset = list(filter(lambda p: p.requires_grad, toy_bert_model.parameters()))[0].numel()
-
+    
     print(optimizer.state_dict()['param_groups'][0]['weight_decay'], flush=True)
-    step_eval = list(range(0, 1000, 20)) + list(range(1000, 30000, 100))
+    step_eval = 100
+    # step_eval = list(range(0, 1000, 20)) + list(range(1000, 30000, 100))
     max_num_steps = args.dataset_size *  args.epochs/args.batch_size
     print('Max number of steps is ', max_num_steps, flush=True)
     
@@ -404,7 +408,7 @@ def main(args):
         num_val=10_000,
         step_eval=step_eval,
         name=None, ## does not save model during training
-        pca=[],#['val', 'tail', 'random'],
+        pca=['val', 'tail'],#['val', 'tail', 'random'],
         hist={},
         probe_results={},
         a=args.a,
@@ -448,7 +452,7 @@ if __name__ == "__main__":
     parser.add_argument('--task', type=str, default="pos", help='Task to train on')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--step_eval', type=int, default=1000, help='How often to evaluate')
-    parser.add_argument('--dataset_size', type=int, default=5_000_000, help='Size of the dataset')
+    parser.add_argument('--dataset_size', type=int, default=8_000_000, help='Size of the dataset')
     parser.add_argument('--hidden_num_layers', type=int, default=8, help='Hidden size of the model')
     parser.add_argument('--num_attention_heads', type=int, default=1, help='Number of attention heads')
     parser.add_argument('--hidden_size', type=int, default=16, help='Hidden size of the model')
@@ -464,6 +468,7 @@ if __name__ == "__main__":
     parser.add_argument('--bins', type=int, default=10, help='Number of bins for probing')
     parser.add_argument('--weight_decay', type=float, default=0.00, help='Weight decay for optimizer')
     parser.add_argument('--forget_steps', type=int, default=-1, help='Number of steps to forget')
+    parser.add_argument('--stop_forgetting_after', type=int, default=None, help='Number of steps to stop forget')
     args = parser.parse_args()
     main(args)
     

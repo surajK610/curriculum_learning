@@ -23,11 +23,13 @@ class AdamEF(torch.optim.Optimizer):
         amsgrad=False,
         clear_embed_every_K_updates=0,
         embed_offset=None,
+        stop_after=None,
     ):
         defaults = dict(lr=lr, lr_emb=lr_emb, betas=betas, eps=eps, weight_decay=weight_decay, amsgrad=amsgrad)
         super(AdamEF, self).__init__(params, defaults)
         self.clear_embed_every_K_updates = clear_embed_every_K_updates
         self.embed_offset = embed_offset
+        self.stop_after = stop_after
 
     @property
     def supports_memory_efficient_fp16(self):
@@ -92,10 +94,11 @@ class AdamEF(torch.optim.Optimizer):
                         state["max_exp_avg_sq"] = torch.zeros_like(p_data_fp32)
                 else:
                     assert self.clear_embed_every_K_updates > 0 #TODO; refactor into some function
-                    if state["step"] % self.clear_embed_every_K_updates == 0:
-                        state["step_emb"] = 0 # reset counter for effective embedding updates
-                        state["exp_avg"][0: self.embed_offset].fill_(0) # reset the running sum (emb) to 0
-                        state["exp_avg_sq"][0: self.embed_offset].fill_(0)
+                    if self.stop_after is not None and state["step"] < self.stop_after:
+                        if state["step"] % self.clear_embed_every_K_updates == 0:
+                            state["step_emb"] = 0 # reset counter for effective embedding updates
+                            state["exp_avg"][0: self.embed_offset].fill_(0) # reset the running sum (emb) to 0
+                            state["exp_avg_sq"][0: self.embed_offset].fill_(0)
 
                     state["exp_avg"] = state["exp_avg"].to(p_data_fp32)
                     state["exp_avg_sq"] = state["exp_avg_sq"].to(p_data_fp32)

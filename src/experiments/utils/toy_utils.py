@@ -123,7 +123,7 @@ class POSVocabGenerator:
         self.amb_nouns = sorted(self.amb_nouns)
         self.amb_adjs = sorted(self.amb_adjs)
         self.amb_tokens = self.amb_nouns + self.amb_adjs
-        print(self.amb_tokens)
+        # print(self.amb_tokens)
         
         self.random_tokens = list(range(num_pos_tokens + 2, num_pos_tokens + 2 + num_random_tokens))
         self.random_nouns = self.random_tokens[:num_random_tokens // 2]
@@ -282,8 +282,8 @@ class POSVocabGenerator:
             for _ in range(num_examples):
                 rand_val = random.random()
                 adj, noun = sample_func_upd('adj'), sample_func_upd('noun')
-                if self.sample_func == 'uniform':
-                    print(adj, noun)
+                # if self.sample_func == 'uniform':
+                #     print(adj, noun)
                 seq = [self.special_token_dict_pos['cop'], adj, noun] if rand_val < 0.50 else [noun, self.special_token_dict_pos['cop'], adj]
                 seq.extend([adj, adj, adj, adj] if rand_val < 0.25 or rand_val >= 0.75 else [noun, adj, noun, noun])
                 label_seq = seq.copy()
