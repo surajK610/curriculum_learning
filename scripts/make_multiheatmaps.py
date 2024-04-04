@@ -30,13 +30,13 @@ def generate_heatmaps(folder_path, output_path):
     plt.savefig(output_path)
     
 def generate_heatmaps_unif(folder_path, output_path):
-    step_eval = list(range(0, 1010, 10)) + [1200, 1400, 1600, 1800, 2000, 2400, 3200, 4000, 6000, 8000, 16000, 28000]
+    # step_eval = list(range(0, 1010, 10)) + [1200, 1400, 1600, 1800, 2000, 2400, 3200, 4000, 6000, 8000, 16000, 28000]
     root_directory = 'outputs/toy_model/'
     csv_files = []
     for root, dirs, files in os.walk(root_directory):
-        if os.path.basename(root).startswith('unif-'):
+        if os.path.basename(root).startswith('zipfw-sf'):
             for file in files:
-                if file.endswith('results.csv'):
+                if file.endswith('results_val.csv'):
                     csv_files.append(os.path.join(root, file))
     
     nrows = len(csv_files) // 3 + (len(csv_files) % 3 > 0)
@@ -75,12 +75,13 @@ def generate_heatmaps_zipf(folder_path, output_path):
     root_directory = 'outputs/toy_model/'
     csv_files = []
     for root, dirs, files in os.walk(root_directory):
-        if os.path.basename(root).startswith('zipfbb-'):
+        if os.path.basename(root).startswith('zipfw-a'):
             for file in files:
-                if file.endswith('probing_results.csv') and 'old' not in root and 'old_params' not in root:
+                if file.endswith('results_tail.csv') and 'old' not in root and 'old_params' not in root and 'a_0' not in root and 'vs_10000-' in root:
                     csv_files.append(os.path.join(root, file))
     
     # csv_files = [f for f in csv_files if '100-' not in f] ## remove 100- files
+    print(csv_files)
     nrows = len(csv_files) // 3 + (len(csv_files) % 3 > 0)
     ncols = 3
 

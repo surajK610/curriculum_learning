@@ -434,7 +434,10 @@ def main(args):
     for key, probe_val in probing_results.items():
         df = pd.DataFrame(probe_val)
         df = df.transpose()
-        df.columns = step_eval[:len(df.columns)]
+        if isinstance(step_eval, int):
+            df.columns = [i*step_eval for i in range(len(df.columns))]
+        else:
+            df.columns = step_eval[:len(df.columns)]
         df = df[::-1]
         df.to_csv(os.path.join(output_dir, f'pos_probing_results_{key}.csv'))
         
@@ -452,7 +455,7 @@ if __name__ == "__main__":
     parser.add_argument('--task', type=str, default="pos", help='Task to train on')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--step_eval', type=int, default=1000, help='How often to evaluate')
-    parser.add_argument('--dataset_size', type=int, default=8_000_000, help='Size of the dataset')
+    parser.add_argument('--dataset_size', type=int, default=4_000_000, help='Size of the dataset')
     parser.add_argument('--hidden_num_layers', type=int, default=8, help='Hidden size of the model')
     parser.add_argument('--num_attention_heads', type=int, default=1, help='Number of attention heads')
     parser.add_argument('--hidden_size', type=int, default=16, help='Hidden size of the model')

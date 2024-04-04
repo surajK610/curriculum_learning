@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=toy_model_zipf_ambr_stop_forg
+#SBATCH --job-name=toy_model_zipf_ambr_stop_forg_s
 #SBATCH --output=outputs/toy_model/slurm_out/log_%a.out
 #SBATCH --error=outputs/toy_model/slurm_out/log_%a.err
-#SBATCH --array=0-15%30
+#SBATCH --array=0-3%30
 #SBATCH --time=24:00:00
 #SBATCH --mem=64G
 
@@ -18,11 +18,11 @@ source $LEARNING_DYNAMICS_HOME/venv/bin/activate
 # vocab_sizes=(100 1000 10000)
 # a_s=(1.0001 1.2 1.5)
 
-stop_forgettings=(10000 20000 30000 40000)
+stop_forgettings=(2500 5000 10000 20000)
 a_s=(0 1.0001 1.2 1.5)
 
-a_index=$((SLURM_ARRAY_TASK_ID / 4))
-forg_index=$((SLURM_ARRAY_TASK_ID % 4))
+a_index=$((SLURM_ARRAY_TASK_ID % 4))
+forg_index=$((SLURM_ARRAY_TASK_ID / 4))
 
 # layer_index=$((SLURM_ARRAY_TASK_ID / 12))
 # vocab_index=$((SLURM_ARRAY_TASK_ID % 4))
@@ -32,4 +32,4 @@ curr_a=${a_s[$a_index]}
 curr_forg=${stop_forgettings[$forg_index]}
 
 echo "SFRunning with layer: 6, vocab: 10000, a: $curr_a, amb: 0.10, stop_forget_steps: $curr_forg"
-python3 $EXPERIMENT_SRC_DIR/toy_model.py --hidden_num_layers 6 --vocab_size 10000 --a $curr_a --prop_amb 0.10 --forget_steps 1000 --stop_forgetting_after $curr_forg --sample_func "zipfian" --hidden_size 64 --intermediate_size 128 --output_dir "outputs/toy_model/zipfw-sf_$curr_forg-amb_0.10-vs_10000-a_$curr_a" --weight_decay 0.01
+python3 $EXPERIMENT_SRC_DIR/toy_model.py --hidden_num_layers 6 --vocab_size 10000 --a $curr_a --prop_amb 0.10 --forget_steps 1000 --stop_forgetting_after $curr_forg --sample_func "zipfian" --hidden_size 64 --intermediate_size 128 --output_dir "outputs/toy_model/zipfw-sfs_$curr_forg-amb_0.10-vs_10000-a_$curr_a" --weight_decay 0.01
