@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, Counter
 from dataclasses import dataclass, field
 import logging
 from typing import cast, Dict, List, Tuple, Union, Callable
@@ -10,7 +10,7 @@ import random
 import seaborn as sns
 from PIL import Image
 import re
-
+import json
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -80,7 +80,7 @@ class TrainingPipeline:
         if self.train_dataloader is None or self.test_dataloader is None:
             logging.debug("training/testing dataloader(s) not provided, creating new ones...")
             self.train_dataloader, self.test_dataloader = self._prepare_dataloaders()
-            
+        
         self._prepare_logging()
         
         pbar = tqdm(range(self.epochs))
@@ -103,7 +103,7 @@ class TrainingPipeline:
                 self._evaluate_during_training(c_step)
                 self._forget_embeddings(c_step)
         return self.hist, self.probe_results
-                
+             
     def val_loop(self, test_dataloader):
         self.model.eval()
         acc, losses = [], []
@@ -168,7 +168,29 @@ class TrainingPipeline:
             plt.close()
 
         return probe_results
-
+    
+    def rank_freq_acc(self, test_dataloader):
+        self.model.eval()
+        train_query_counts = Counter(self.train_dataloader.dataset.tensors[0][:, -4].tolist())
+        sample_func = lambda type: self.vocab_gen.uniform(type)
+        inputs_t, labels_t = self.vocab_gen.create_dataset_task_pos(100000, sample_func=sample_func, device=self.device)
+        test_dataset = TensorDataset(inputs_t.detach(), labels_t)
+        new_test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+        # -4 is the position of the query token
+        # test_dataloader.batch_size = 1
+        rank_freq_acc_entries= {}
+        with torch.no_grad():
+            pbar = tqdm(new_test_dataloader)
+            for val_batch in pbar:
+                _, stats = self.step(val_batch, hard_acc=True)
+                curr_x, _ = val_batch
+                query = curr_x.squeeze()[-4].item()
+                print(train_query_counts[query])
+                if train_query_counts[query] not in rank_freq_acc_entries:
+                    rank_freq_acc_entries[train_query_counts[query]] = []
+                rank_freq_acc_entries[train_query_counts[query]].append(stats["acc"]) 
+        return rank_freq_acc_entries
+                
     def _plot_pca_results(self, ax, torch_embed, labels, acc, state_index):
         """
         Helper method to plot PCA results for a given hidden state.
@@ -264,7 +286,6 @@ class TrainingPipeline:
         logging.debug("finished creating new dataloaders...")
         
         return train_dataloader, test_dataloader
-    
     
     def _prepare_logging(self):
         logging.debug("preparing logging...")
@@ -422,11 +443,18 @@ def main(args):
     for key, val_dataloader in pipeline.test_dataloader.items():
         val_stats = pipeline.val_loop(val_dataloader)
         print(key, val_stats) # 10 - 80 identical, 10 - 20 1 token diff, 20 - 80 2 token diff
-  
+        
+        
+    rank_freq_acc_entries = pipeline.rank_freq_acc(pipeline.test_dataloader['val'])
+    print('saving rank freq acc entries...', flush=True)
+    
     print(pipeline.hist, pipeline.probe_results)
     print('saving results...', flush=True)
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
+    
+    json.dump(rank_freq_acc_entries, open(os.path.join(args.output_dir, 'rank_freq_acc.json'), 'w'))
+    
     # for key, hist_val in hist.items():
     hist_df = pd.DataFrame(hist)
     hist_df.to_csv(os.path.join(output_dir, f'hist.csv'))
