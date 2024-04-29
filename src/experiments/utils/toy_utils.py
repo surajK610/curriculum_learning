@@ -78,6 +78,15 @@ def create_dataloaders_bin(data, labels, device="cpu"):
     val_dataloader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=0)
     return train_dataloader, val_dataloader
   
+def plot_pca_embeddings(transformed_data, labels, path):
+    plt.figure(figsize=(8, 6))
+    scatter = plt.scatter(transformed_data[:, 0], transformed_data[:, 1], c=labels, cmap='viridis', alpha=0.6)
+    plt.colorbar(scatter, ticks=[1, 2, 3])
+    # plt.title(title)
+    plt.xlabel('Component 1')
+    plt.ylabel('Component 2')
+    plt.grid(True)
+    plt.savefig(path)
 ## ------------------------------------------ DATASET CREATION FUNCS ----------------------------------
 
 @dataclass
@@ -86,6 +95,9 @@ class POSVocabGenerator:
     noun_tokens: List[int] = field(default_factory=list)
     adj_tokens: List[int] = field(default_factory=list)
     random_tokens: List[int] = field(default_factory=list)
+    random_tokens: List[int] = field(default_factory=list)
+    random_tokens_unif: List[int] = field(default_factory=list)
+    random_tokens_larg: List[int] = field(default_factory=list)
     random_adjs: List[int] = field(default_factory=list)
     random_nouns: List[int] = field(default_factory=list)
     amb_tokens: List[int] = field(default_factory=list)
@@ -95,7 +107,7 @@ class POSVocabGenerator:
     bins: int = 10
     sample_func: str = 'zipfian'
     
-    def parameterize_pos_vocab(self, num_pos_tokens: int, num_random_tokens: int, prop_amb=0.0, bins=10, a=1.5, sample_func='zipfian', tail_only=False):
+    def parameterize_pos_vocab(self, num_pos_tokens: int, num_random_tokens: int, extra_eval=False, prop_amb=0.0, bins=10, a=1.5, sample_func='zipfian', tail_only=False):
         assert num_pos_tokens % 2 == 0, "Number of POS tokens must be even"
         self.special_token_dict_pos = {'cop': num_pos_tokens, 'mask': num_pos_tokens + 1}
         self.noun_tokens = list(range(num_pos_tokens // 2))
@@ -124,11 +136,14 @@ class POSVocabGenerator:
         self.amb_adjs = sorted(self.amb_adjs)
         self.amb_tokens = self.amb_nouns + self.amb_adjs
         # print(self.amb_tokens)
-        
         self.random_tokens = list(range(num_pos_tokens + 2, num_pos_tokens + 2 + num_random_tokens))
         self.random_nouns = self.random_tokens[:num_random_tokens // 2]
         self.random_adjs = self.random_tokens[num_random_tokens // 2:]
-
+        
+        if extra_eval:
+            self.random_tokens_larg = list(range(num_pos_tokens + 2 + num_random_tokens, num_pos_tokens + 2 + 2*num_random_tokens))
+            self.random_tokens_unif = list(range(num_pos_tokens + 2 +2*num_random_tokens, num_pos_tokens + 2 + 3*num_random_tokens))
+        
     def tail_end_z(self, type='noun'):
         assert type in ['noun', 'adj'], "type not found"
         tokens = self.noun_tokens if type == 'noun' else self.adj_tokens
@@ -157,9 +172,9 @@ class POSVocabGenerator:
     ## amb token gotten - 50% of the time it's kept, 50% of time it's replaced with a random token
     
     def get_vocab_tokens(self):
-        return len(self.noun_tokens + self.adj_tokens + self.random_tokens) + len(self.special_token_dict_pos)
+        return len(self.noun_tokens + self.adj_tokens + self.random_tokens + self.random_tokens_unif + self.random_tokens_larg) + len(self.special_token_dict_pos)
 
-    def create_dataset_task_pos(self, num_examples: int, sample_func: Callable = zipfian, prop_amb_all=0.0, tail_end=False, switch=False, random_v=False, holdout_once=False, holdout=False, amb_only=False, non_amb_only=False, cbin=None, device=None) -> Tuple[List[List[int]], List[List[int]]]:
+    def create_dataset_task_pos(self, num_examples: int, sample_func: Callable = zipfian, prop_amb_all=0.0, tail_end=False, switch=False, holdout_unif=False, holdout_larg=False, holdout_once=False, holdout=False, amb_only=False, non_amb_only=False, cbin=None, device=None) -> Tuple[List[List[int]], List[List[int]]]:
         dataset = []
         labels = []
         holdout_noun_set =self.random_nouns.copy() * int(holdout_once)
@@ -182,17 +197,26 @@ class POSVocabGenerator:
                             return self._zipfian(set=self.amb_nouns) if self.sample_func == 'zipfian' else self._uniform(set=self.amb_nouns)
                     return adj
                   
-            if random_v:
+            if holdout:
                 if len(self.random_tokens) == 0:
                     raise ValueError('No random tokens found')
                 return lambda type: self._uniform(self.random_tokens)
             
+            if holdout_unif:
+                if len(self.random_tokens_unif) == 0:
+                    raise ValueError('No random unif tokens found')
+                return lambda type: self._uniform(self.random_tokens_unif)
+            
+            if holdout_larg:
+                if len(self.random_tokens_larg) == 0:
+                    raise ValueError('No random large tokens found')
+                return lambda type: self._uniform(self.random_tokens_larg)
             ## switch and holdout tokens 
-            if switch and holdout:
-                return lambda type: self._uniform(self.random_nouns) if type == 'adj' else self._uniform(self.random_adjs)
-            ## holdout tokens
-            if holdout:
-                return lambda type: self._uniform(self.random_adjs) if type == 'adj' else self._uniform(self.random_nouns)
+            # if switch and holdout:
+            #     return lambda type: self._uniform(self.random_nouns) if type == 'adj' else self._uniform(self.random_adjs)
+            # ## holdout tokens
+            # if holdout:
+            #     return lambda type: self._uniform(self.random_adjs) if type == 'adj' else self._uniform(self.random_nouns)
             ## holdout seen once
             if holdout_once:
                 def tmp_func_h(type):
