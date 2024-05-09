@@ -330,6 +330,7 @@ def main(args):
         with open(os.path.join(output_dir, save_model_name, layer_str, "val_acc.txt"), "w") as f:
             f.write(str(layer_results[layer]))
     
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train a model on a toy task')
     parser.add_argument('--epochs', type=int, default=1, help='Number of epochs to train for')

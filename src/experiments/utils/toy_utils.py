@@ -67,7 +67,7 @@ def bin_val_loop(model, test_dataloader):
             results = {"acc": np.mean(acc), "loss": np.mean(losses)}
             pbar.set_postfix(**results)
     return results
-  
+
 def create_dataloaders_bin(data, labels, device="cpu"):
     train_len = int(0.80 * len(data))
     inputs_t, labels_t = data[:train_len], labels[:train_len]
@@ -77,7 +77,7 @@ def create_dataloaders_bin(data, labels, device="cpu"):
     train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=0)
     val_dataloader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=0)
     return train_dataloader, val_dataloader
-  
+
 def plot_pca_embeddings(transformed_data, labels, path):
     plt.figure(figsize=(8, 6))
     scatter = plt.scatter(transformed_data[:, 0], transformed_data[:, 1], c=labels, cmap='viridis', alpha=0.6)
@@ -87,6 +87,7 @@ def plot_pca_embeddings(transformed_data, labels, path):
     plt.ylabel('Component 2')
     plt.grid(True)
     plt.savefig(path)
+
 ## ------------------------------------------ DATASET CREATION FUNCS ----------------------------------
 
 @dataclass
@@ -143,12 +144,12 @@ class POSVocabGenerator:
         if extra_eval:
             self.random_tokens_larg = list(range(num_pos_tokens + 2 + num_random_tokens, num_pos_tokens + 2 + 2*num_random_tokens))
             self.random_tokens_unif = list(range(num_pos_tokens + 2 +2*num_random_tokens, num_pos_tokens + 2 + 3*num_random_tokens))
-        
+    
     def tail_end_z(self, type='noun'):
         assert type in ['noun', 'adj'], "type not found"
         tokens = self.noun_tokens if type == 'noun' else self.adj_tokens
         return self._uniform(tokens[-len(tokens) // 10:])
-
+    
     def uniform(self, type='noun'):
         assert type in ['noun', 'adj'], "type not found"
         tokens = self.noun_tokens if type == 'noun' else self.adj_tokens
@@ -174,7 +175,7 @@ class POSVocabGenerator:
     def get_vocab_tokens(self):
         return len(self.noun_tokens + self.adj_tokens + self.random_tokens + self.random_tokens_unif + self.random_tokens_larg) + len(self.special_token_dict_pos)
 
-    def create_dataset_task_pos(self, num_examples: int, sample_func: Callable = zipfian, prop_amb_all=0.0, tail_end=False, switch=False, holdout_unif=False, holdout_larg=False, holdout_once=False, holdout=False, amb_only=False, non_amb_only=False, cbin=None, device=None) -> Tuple[List[List[int]], List[List[int]]]:
+    def create_dataset_task_pos(self, num_examples: int, sample_func: Callable = zipfian, prop_amb_all=0.0, tail_end=False, switch=False, top_20=False, holdout_unif=False, holdout_larg=False, holdout_once=False, holdout=False, amb_only=False, non_amb_only=False, cbin=None, device=None) -> Tuple[List[List[int]], List[List[int]]]:
         dataset = []
         labels = []
         holdout_noun_set =self.random_nouns.copy() * int(holdout_once)
@@ -269,6 +270,11 @@ class POSVocabGenerator:
                         if token not in self.amb_tokens:
                             return token
                 return tmp_func_na
+            
+            # top 20 tokens each type only
+            if top_20:
+                return lambda type: self._uniform(self.adj_tokens[:20]) if type == 'adj' else self._uniform(self.noun_tokens[:20])
+            
             ## just switch 
             if switch:
                 return lambda type: sample_func('noun') if type == 'adj' else sample_func('adj')

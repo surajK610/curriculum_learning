@@ -189,7 +189,7 @@ class TrainingPipeline:
                 _, stats = self.step(val_batch, hard_acc=True)
                 curr_x, _ = val_batch
                 query = curr_x.squeeze()[-4].item()
-                print(train_query_counts[query])
+                # print(train_query_counts[query])
                 if train_query_counts[query] not in rank_freq_acc_entries:
                     rank_freq_acc_entries[train_query_counts[query]] = []
                 rank_freq_acc_entries[train_query_counts[query]].append(stats["acc"]) 
@@ -282,14 +282,21 @@ class TrainingPipeline:
                     bin_amb, labels_am = self.vocab_gen.create_dataset_task_pos(self.num_val//self.vocab_gen.bins, sample_func=sample_func, cbin=cbin, amb_only=True, device=self.device)
                     bin_nonamb, labels_nam = self.vocab_gen.create_dataset_task_pos(self.num_val//self.vocab_gen.bins, sample_func=sample_func, cbin=cbin, non_amb_only=True, device=self.device)
                     bin_nonamb_s, labels_nam_s = self.vocab_gen.create_dataset_task_pos(self.num_val//self.vocab_gen.bins, sample_func=sample_func, cbin=cbin, non_amb_only=True, switch=True, device=self.device)
+                    
                     bin_amb_ds = TensorDataset(bin_amb.detach(), labels_am)
                     bin_nonamb_ds = TensorDataset(bin_nonamb.detach(), labels_nam)
                     bin_nonamb_s_ds = TensorDataset(bin_nonamb_s.detach(), labels_nam_s)
+                    
                     test_dataloader[f'bin_{cbin}_amb'] = DataLoader(bin_amb_ds, batch_size=self.batch_size, shuffle=False, num_workers=0)
                     test_dataloader[f'bin_{cbin}_nonamb'] = DataLoader(bin_nonamb_ds, batch_size=self.batch_size, shuffle=False, num_workers=0)
                     test_dataloader[f'bin_{cbin}_nonamb_switch'] = DataLoader(bin_nonamb_s_ds, batch_size=self.batch_size, shuffle=False, num_workers=0)
         
         if self.extra_eval:
+            inputs_tt, labels_tt = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, top_20=True, device=self.device)
+            holdout_tt_dataset = TensorDataset(inputs_tt.detach(), labels_tt)
+            holdout_tt_dataloader = DataLoader(holdout_tt_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+            test_dataloader['top_twenty'] = holdout_tt_dataloader
+            
             inputs_hu, labels_hu = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, holdout_unif=True, device=self.device)
             inputs_hl, labels_hl = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, holdout_larg=True, device=self.device)
             holdout_unif_dataset = TensorDataset(inputs_hu.detach(), labels_hu)
@@ -362,9 +369,18 @@ class TrainingPipeline:
         logging.debug(f"running random evaluation at step {c_step}...")
         if not hasattr(self, 'initial_holdout_embs'):
             self.initial_random_embs = self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens].clone()
-        
+        if not hasattr(self, 'initial_holdout_unif_embs'):
+            self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens_unif] = self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens_unif].uniform_()
+            self.initial_random_unif_embs = self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens_unif].clone()
+        if not hasattr(self, 'initial_holdout_larg_embs'):
+            self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens_larg] = self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens_larg].normal_(mean=5.0, std=5.0)
+            self.initial_random_larg_embs = self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens_larg].clone()
         ## random initialization of embeddings from init distribution
         self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens] = self.initial_random_embs
+        self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens_unif] = self.initial_random_unif_embs
+        self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens_larg] = self.initial_random_larg_embs
+        
+        print('Mean large random', torch.mean(self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens_larg]).item())
         # self.model.train()
         ## see everything once at least
         # for epoch in range(5):
@@ -374,10 +390,9 @@ class TrainingPipeline:
         #     loss.backward()
         #     self.optimizer.step()
         self.hist['holdout'][c_step] = self.val_loop(self.test_dataloader['holdout'])['acc']
-        self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens].uniform_(mean=0.0, std=1.0)
-        self.hist['holdout_uniform'][c_step] = self.val_loop(self.test_dataloader['holdout'])['acc']
-        self.model.bert.embeddings.word_embeddings.weight.data[self.vocab_gen.random_tokens].normal_(mean=5.0, std=5.0)
-        self.hist['holdout_large_mag'][c_step] = self.val_loop(self.test_dataloader['holdout'])['acc']
+        if self.extra_eval:
+            self.hist['holdout_unif'][c_step] = self.val_loop(self.test_dataloader['holdout_unif'])['acc']
+            self.hist['holdout_larg'][c_step] = self.val_loop(self.test_dataloader['holdout_larg'])['acc']
         
         # self.hist['holdout_switch'][c_step] = self.val_loop(self.test_dataloader['holdout_switch'])['acc']
 
@@ -465,6 +480,7 @@ def main(args):
         val_stats = pipeline.val_loop(val_dataloader)
         print(key, val_stats) # 10 - 80 identical, 10 - 20 1 token diff, 20 - 80 2 token diff
         
+    pipeline._holdout_eval(int(max_num_steps))
         
     rank_freq_acc_entries = pipeline.rank_freq_acc(pipeline.test_dataloader['val'])
     print('saving rank freq acc entries...', flush=True)
@@ -496,8 +512,7 @@ def main(args):
         ax.set_title(f"POS Probing {key}")
         plt.savefig(os.path.join(output_dir, f'pos_probing_steps_{key}.png'))
         plt.close()
-    
-
+        
     noun_embeddings = pipeline.model.bert.embeddings.word_embeddings.weight[pipeline.vocab_gen.noun_tokens]
     adj_embeddings = pipeline.model.bert.embeddings.word_embeddings.weight[pipeline.vocab_gen.adj_tokens]
     random_embeddings = pipeline.model.bert.embeddings.word_embeddings.weight[pipeline.vocab_gen.random_tokens]
