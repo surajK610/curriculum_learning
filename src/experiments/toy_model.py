@@ -62,6 +62,10 @@ class TrainingPipeline:
     bins : int = 10
     sample_func : str = 'zipfian'
     extra_eval : bool = False
+    top_twenty : bool = False
+    amb_test : bool = False
+    output_dir : str = None
+    plot_pca : bool = False
 
     def step(self, batch, hard_acc=False):
         x, y = batch
@@ -121,7 +125,7 @@ class TrainingPipeline:
                 pbar.set_postfix(**results)
         return results
     
-    def pca_pos(self, val_dataloader, title, c_step, output_dir=None, plot=False, probe_results=None):
+    def pca_pos(self, val_dataloader, title, c_step, probe_results=None):
         if not hasattr(self, 'adj_min'):
             self.adj_min = min(self.vocab_gen.adj_tokens)
         if not hasattr(self, 'adj_max'):
@@ -151,23 +155,23 @@ class TrainingPipeline:
                 hidden_layers[j].append(outputs.hidden_states[j][:, -4, :])
         labels = torch.concat(labels, axis=0).unsqueeze(1)
 
-        for i in range(num_hidden_states):
-            torch_embed = torch.concat(hidden_layers[i], axis=0).squeeze()
-            probe = Probe(torch_embed.shape[1]).to(self.device)
-            train_dataloader_bin, val_dataloader_bin = create_dataloaders_bin(torch_embed, labels)
-            optim_bin = torch.optim.AdamW(probe.parameters(), lr=1e-3)
-            results = bin_train_loop(probe, train_dataloader_bin, val_dataloader_bin, optim_bin, 3)
-            probe_results[i].append(results['acc'])
-            
-            if plot:
-                _, axs = plt.subplots(1, num_hidden_states, figsize=(5 * num_hidden_states, 5))
-                self._plot_pca_results(axs[i], torch_embed, labels, results['acc'], i)
+        # for i in range(num_hidden_states):
+        i = 0
+        torch_embed = torch.concat(hidden_layers[i], axis=0).squeeze()
+        probe = Probe(torch_embed.shape[1]).to(self.device)
+        train_dataloader_bin, val_dataloader_bin = create_dataloaders_bin(torch_embed, labels)
+        optim_bin = torch.optim.AdamW(probe.parameters(), lr=1e-3)
+        results = bin_train_loop(probe, train_dataloader_bin, val_dataloader_bin, optim_bin, 3)
+        probe_results[i].append(results['acc'])
+        
+        if self.plot_pca:
+            _, axs = plt.subplots(1, 1, figsize=(5 * 1, 5))
+            self._plot_pca_results(axs, torch_embed, labels, results['acc'], i)
     
-        if plot:
             plt.suptitle(title)
-            if output_dir is not None:
-                os.makedirs(output_dir, exist_ok=True)
-                plt.savefig(os.path.join(output_dir, f'pca_step_{c_step}.png'))
+            if self.output_dir is not None:
+                os.makedirs(self.output_dir, exist_ok=True)
+                plt.savefig(os.path.join(self.output_dir, f'pca_step_{c_step}.png'))
             plt.show()
             plt.close()
 
@@ -215,6 +219,7 @@ class TrainingPipeline:
         ax.set_ylabel("Principal Component 2")
         ax.legend()
         ax.grid(True)
+        # plt.savefig(f"pca_state_{state_index}.png")
         
     def _prepare_dataloaders(self):
         test_dataloader = {}
@@ -267,7 +272,7 @@ class TrainingPipeline:
             test_dataloader['tail'] = tail_end_val_dataloader
             test_dataloader['tail_switch'] = tail_switch_dataloader
             
-        if self.prop_amb > 0:
+        if self.prop_amb > 0 and self.amb_test:
             inputs_na, labels_na = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, non_amb_only=True, device=self.device)
             inputs_am, labels_am = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, amb_only=True, device=self.device)
             nonamb_val_dataset = TensorDataset(inputs_na.detach(), labels_na)
@@ -291,12 +296,18 @@ class TrainingPipeline:
                     test_dataloader[f'bin_{cbin}_nonamb'] = DataLoader(bin_nonamb_ds, batch_size=self.batch_size, shuffle=False, num_workers=0)
                     test_dataloader[f'bin_{cbin}_nonamb_switch'] = DataLoader(bin_nonamb_s_ds, batch_size=self.batch_size, shuffle=False, num_workers=0)
         
-        if self.extra_eval:
+        if self.top_twenty:
             inputs_tt, labels_tt = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, top_20=True, device=self.device)
             holdout_tt_dataset = TensorDataset(inputs_tt.detach(), labels_tt)
             holdout_tt_dataloader = DataLoader(holdout_tt_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
             test_dataloader['top_twenty'] = holdout_tt_dataloader
             
+            inputs_tts, labels_tts = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, top_20=True, switch=True, device=self.device)
+            holdout_tts_dataset = TensorDataset(inputs_tts.detach(), labels_tts)
+            holdout_tts_dataloader = DataLoader(holdout_tts_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+            test_dataloader['top_twenty_switch'] = holdout_tts_dataloader
+            
+        if self.extra_eval:
             inputs_hu, labels_hu = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, holdout_unif=True, device=self.device)
             inputs_hl, labels_hl = self.vocab_gen.create_dataset_task_pos(self.num_val, sample_func=sample_func, holdout_larg=True, device=self.device)
             holdout_unif_dataset = TensorDataset(inputs_hu.detach(), labels_hu)
@@ -343,7 +354,7 @@ class TrainingPipeline:
                 if self.optimizer.stop_after is None or (isinstance(self.optimizer.stop_after, int) and c_step < self.optimizer.stop_after):
                     print(f"Clearing embeddings at step {c_step}", flush=True)
                     self.model.bert.embeddings.word_embeddings.reset_parameters()
-                
+                    
     def _evaluate_during_training(self, c_step):
         logging.debug(f"evaluating during training step {c_step}...")
         if (isinstance(self.step_eval, int) and c_step % self.step_eval == 0) or (isinstance(self.step_eval, (list, tuple)) and c_step in self.step_eval):
@@ -408,7 +419,6 @@ class TrainingPipeline:
 def main(args):
     ## SETTING SEED
     logging.basicConfig(filename=args.log, level=logging.DEBUG)
-
     torch.manual_seed(args.seed)
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -464,14 +474,18 @@ def main(args):
         num_val=10_000,
         step_eval=step_eval,
         name=None, ## does not save model during training
-        pca=[],#['val', 'tail', 'random'],
+        pca=['val', 'tail'],#['val', 'tail', 'random'],
         hist={},
         probe_results={},
         a=args.a,
         prop_amb=args.prop_amb,
         bins=args.bins,
         sample_func=sample_func,
-        extra_eval=args.extra_eval
+        extra_eval=args.extra_eval, 
+        top_twenty=args.top_twenty,
+        amb_test=args.amb_test, 
+        output_dir=args.output_dir,
+        plot_pca=args.plot_pca
         )
         
     hist, probing_results = pipeline.train_loop()
@@ -554,6 +568,9 @@ if __name__ == "__main__":
     parser.add_argument('--forget_steps', type=int, default=-1, help='Number of steps to forget')
     parser.add_argument('--stop_forgetting_after', type=int, default=None, help='Number of steps to stop forget')
     parser.add_argument('--extra_eval', action='store_true', help='Extra evaluation')
+    parser.add_argument('--top_twenty', action='store_true', help='Top twenty evaluation')
+    parser.add_argument('--amb_test', action='store_true', help='Ambiguity test')
+    parser.add_argument('--plot_pca', action='store_true', help='Plot PCA')
     args = parser.parse_args()
     main(args)
     

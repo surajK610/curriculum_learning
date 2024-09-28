@@ -271,6 +271,8 @@ class POSVocabGenerator:
                             return token
                 return tmp_func_na
             
+            if switch and top_20:
+                return lambda type: self._uniform(self.adj_tokens[:20]) if type == 'noun' else self._uniform(self.noun_tokens[:20])
             # top 20 tokens each type only
             if top_20:
                 return lambda type: self._uniform(self.adj_tokens[:20]) if type == 'adj' else self._uniform(self.noun_tokens[:20])
@@ -561,3 +563,4 @@ class DepVocabGenerator:
                     label_seq[i] = -100
                     alt_labels_seq[i] = -100
         return label_seq, alt_labels_seq
+    
