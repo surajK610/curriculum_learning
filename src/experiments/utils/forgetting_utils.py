@@ -149,3 +149,4 @@ class AdamEF(torch.optim.Optimizer):
                 if p.data.dtype in {torch.float16, torch.bfloat16}:
                     p.data.copy_(p_data_fp32)
         return loss
+    

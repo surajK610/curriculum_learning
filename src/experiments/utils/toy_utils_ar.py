@@ -212,19 +212,22 @@ class ICLVocabGenerator:
             dataset.append(seq)
         return dataset
 
-    def create_eval_dataset_in_weights(self, num_examples: int) -> List[List[int]]:
+    def create_eval_dataset_in_weights(self, num_examples: int, sample_func: Callable = None) -> List[List[int]]:
         """
         Generate evaluation dataset for in-weights learning.
         Sequences have labels same as in training, but the query token does not appear in the context.
         The model must use information stored in weights to predict the query label.
         """
         dataset = []
+        if sample_func is None:
+            sample_func = self.zipfian
+            
         training_tokens = self.tokens
         for _ in range(num_examples):
             seq = []
 
             context_tokens = random.sample(training_tokens, k=8)
-            query_token = random.choice([t for t in training_tokens if t not in context_tokens])
+            query_token = random.choice([t for t in training_tokens if t not in context_tokens]) #sample_func()
             for token in context_tokens:
                 label = self.token_label_map[token]
                 label_token = self.label_tokens[label]

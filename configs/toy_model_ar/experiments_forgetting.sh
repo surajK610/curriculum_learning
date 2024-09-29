@@ -15,15 +15,15 @@ export EXPERIMENT_SRC_DIR=$LEARNING_DYNAMICS_HOME/src/experiments
 source $LEARNING_DYNAMICS_HOME/venv/bin/activate
 
 
-amb_s=(0.05 0.10 0.20)
+k_s=(500 1000 2000)
 num_examples=(150000 200000 400000)
 a_s=(0 1.0001 1.5 2 3) # 45 
 
-amb_index=$(( SLURM_ARRAY_TASK_ID / 15 ))
+k_index=$(( SLURM_ARRAY_TASK_ID / 15 ))
 num_example_index=$(( (SLURM_ARRAY_TASK_ID % 15 ) % 3 ))
 a_index=$(( (SLURM_ARRAY_TASK_ID % 15) / 3 ))
 
-curr_amb=${amb_s[$a_index]}
+curr_k=${amb_s[$a_index]}
 curr_num_examples=${num_examples[$a_index]}
 curr_a=${a_s[$a_index]}
 
@@ -32,5 +32,5 @@ curr_a=${a_s[$a_index]}
 # vocab_index=$((SLURM_ARRAY_TASK_ID % 4))
 # prop_amb_ind=$((SLURM_ARRAY_TASK_ID / 16))
 
-echo "Running with number train: $curr_num_examples, a: $curr_a, amb: $curr_amb"
-python3 $EXPERIMENT_SRC_DIR/toy_model_ar.py --amb_ratio $curr_amb --num_train_examples $curr_num_examples --a $curr_a  --output_dir "outputs/toy_model_ar/amb_$curr_amb-numtr_$curr_num_examples-a_$curr_a"
+echo "Running with k: $curr_k, a: $curr_a, num examples: $curr_num_examples"
+python3 $EXPERIMENT_SRC_DIR/toy_model_ar.py --epochs 10 --amb_ratio 0.10 --forget_steps $curr_k --num_train_examples $curr_num_examples --a $curr_a  --output_dir "outputs/toy_model_ar/af_k_$curr_k-numtr_$curr_num_examples-a_$curr_a"

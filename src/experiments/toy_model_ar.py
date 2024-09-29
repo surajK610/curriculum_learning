@@ -61,6 +61,7 @@ from dataclasses import dataclass, field
 from typing import List, Callable
 from tqdm import tqdm
 from utils.toy_utils_ar import ICLVocabGenerator, CustomSequenceDataset
+from utils.forgetting_utils import AdamEF
 
 def evaluate_in_context(model, dataloader, device, eval_label_tokens):
     model.eval()
@@ -132,6 +133,13 @@ def evaluate(model, dataloader, device):
     model.train()
     return accuracy
 
+def _forget_embeddings(optimizer, model, step):
+    if hasattr(optimizer, 'clear_embed_every_K_updates') and optimizer.clear_embed_every_K_updates > 0:
+        if (isinstance(optimizer.clear_embed_every_K_updates, int) and (step+1) % optimizer.clear_embed_every_K_updates == 0):
+            if optimizer.stop_after is None or (isinstance(optimizer.stop_after, int) and (step+1) < optimizer.stop_after):
+                print(f"Clearing embeddings at step {(step+1)}", flush=True)
+                model.transformer.wte.reset_parameters()
+                    
 def train(model,
          vocab_gen,
          train_loader,
@@ -171,6 +179,7 @@ def train(model,
             optimizer.step()
             scheduler.step()
             total_loss += loss.item()
+            _forget_embeddings(optimizer, model, step)
 
             # Print loss every 100 steps or at the end of epoch
             if (step + 1) % 1000 == 0 or (step + 1) == len(train_loader):
@@ -227,7 +236,7 @@ def main(args):
                                                         amb_ratio=amb_ratio)
     eval_sequences_in_context = vocab_gen.create_eval_dataset_in_context(num_examples=num_test_examples)
     eval_sequences_in_context_holdout = vocab_gen.create_eval_dataset_in_context(num_examples=num_test_examples, holdout=True)
-    eval_sequences_in_weights = vocab_gen.create_eval_dataset_in_weights(num_examples=num_test_examples)
+    eval_sequences_in_weights = vocab_gen.create_eval_dataset_in_weights(num_examples=num_test_examples, sample_func=sample_func)
 
     # Create datasets
     block_size = args.block_size
@@ -275,7 +284,12 @@ def main(args):
     model.to(device)
 
     optimizer = AdamW(model.parameters(), lr=args.learning_rate)  # Higher learning rate for training from scratch
-
+    if args.forget_steps > 0:
+        print('Using AdamEF optimizer clearing every', args.forget_steps, 'stopping after', args.stop_forgetting_after, flush=True)
+        optimizer = AdamEF(model.parameters(), lr=5e-5, lr_emb=5e-5, weight_decay=args.weight_decay, clear_embed_every_K_updates=args.forget_steps)
+        optimizer.stop_after = args.stop_forgetting_after
+        optimizer.embed_offset = list(filter(lambda p: p.requires_grad, model.parameters()))[0].numel()
+        
     num_epochs = args.num_epochs
     total_steps = len(train_loader) * num_epochs
 
@@ -324,6 +338,8 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate', type=float, default=5e-5, help='Learning rate for optimizer')
     parser.add_argument('--num_epochs', type=int, default=8, help='Number of training epochs')
     parser.add_argument('--output_dir', type=str, default='output', help='Directory to save results')
-
+    parser.add_argument('--forget_steps', type=int, default=0)
+    parser.add_argument('--stop_forgetting_after', type=int, default=1000000)
+    parser.add_argument('--weight_decay', type=float, default=0.01)
     args = parser.parse_args()
     main(args)
