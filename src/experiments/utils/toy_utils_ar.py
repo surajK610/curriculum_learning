@@ -89,7 +89,7 @@ class ICLVocabGenerator:
     def zipfian(self):
         return self._zipfian(self.tokens)
     
-    def create_dataset_task_icl(self, num_examples: int, sample_func: Callable = None, bursty_ratio: float = 0.0, amb_ratio : float = 0.05) -> List[List[int]]:
+    def create_dataset_task_icl(self, num_examples: int, sample_func: Callable = None, bursty_ratio: float = 0.0) -> List[List[int]]:
         """
         Generate training dataset with sequences sampled from sample_func distribution.
         Each sequence ends with a query token and its label.
@@ -115,19 +115,19 @@ class ICLVocabGenerator:
             other_tokens = [token for token in self.tokens if token != query_token]
             if not other_tokens:
                 raise ValueError("Not enough tokens to create bursty sequences with two classes.")
-            non_query_tokens = random.choices(other_tokens, k=3)
-            token_counts = {query_token: 3, non_query_tokens[0]: 3, non_query_tokens[1]: 1, non_query_tokens[2]: 1}
+            non_query_tokens = []
+            while len(non_query_tokens) < 3:
+                curr_token = sample_func()
+                if curr_token != query_token:
+                    non_query_tokens.append(curr_token)
+            # random.choices(other_tokens, k=3)
+            token_counts = {query_token: 4, non_query_tokens[0]: 4, non_query_tokens[1]: 0, non_query_tokens[2]: 0}
             labels = {}
             for token in token_counts.keys():
-                if random.random() > 1 - amb_ratio:
-                    labels[token] = random.choice([0, 1])
+                if random.random() > 0.95:
+                    labels[token] = random.choice(self.tokens)
                 else:
                     labels[token] = self.token_label_map[token]
-            # labels = {query_token: random.choice(self.token_label_map[query_token]), 
-            #           non_query_tokens[0]: random.choice(self.token_label_map[non_query_tokens[0]]), 
-            #           non_query_tokens[1]: random.choice(self.token_label_map[non_query_tokens[1]]), 
-            #           non_query_tokens[2]: random.choice(self.token_label_map[non_query_tokens[2]])}
-
             context_examples = []
             for token, count in token_counts.items():
                 label = labels[token]
@@ -144,16 +144,16 @@ class ICLVocabGenerator:
             seq.extend([query_token, query_label_token])
             dataset.append(seq)
     
-        for _ in range(num_non_bursty):
+        for _ in tqdm(range(num_non_bursty)):
             seq = []
             for _ in range(8):
                 token = sample_func()
-                label = random.choice(self.token_label_map[token])
+                label = self.token_label_map[token]
                 label_token = self.label_tokens[label]
                 seq.extend([token, label_token])
     
             query_token = sample_func()
-            query_label = random.choice(self.token_label_map[query_token])
+            query_label = self.token_label_map[query_token]
             query_label_token = self.label_tokens[query_label]
             seq.extend([query_token, query_label_token])
             dataset.append(seq)
@@ -162,7 +162,7 @@ class ICLVocabGenerator:
     
         return dataset
 
-    def create_eval_dataset_in_context(self, num_examples: int, sample_func: Callable = None, holdout=False) -> List[List[int]]:
+    def create_eval_dataset_in_context(self, num_examples: int, holdout=False) -> List[List[int]]:
         """
         Generate evaluation dataset for in-context learning on holdout tokens.
         Each sequence consists of context examples from 2 holdout classes (tokens not seen during training),
@@ -170,13 +170,10 @@ class ICLVocabGenerator:
         for each sequence. The query is randomly selected from one of the two classes.
         """
         dataset = []
-        if sample_func is None:
-            sample_func = self.zipfian  
-    
         if holdout:
             holdout_tokens = self.random_tokens.copy()  # Tokens not used during training
         else:
-            holdout_tokens = self.tokens.copy()
+            holdout_tokens = self.tokens.copy()  # 
     
         for _ in range(num_examples):
             seq = []
@@ -184,12 +181,12 @@ class ICLVocabGenerator:
                 query_token = random.choice(holdout_tokens)
                 other_tokens = [token for token in holdout_tokens if token != query_token]
             else:
-                query_token = sample_func()
+                query_token = random.choice(self.tokens)
                 other_tokens = [token for token in self.tokens if token != query_token]
             if not other_tokens:
                 raise ValueError("Not enough tokens to create bursty sequences with two classes.")
             non_query_tokens = random.choices(other_tokens, k=3)
-            token_counts = {query_token: 4, non_query_tokens[0]: 4, non_query_tokens[1]: 0, non_query_tokens[2]: 0}
+            token_counts = {query_token: 3, non_query_tokens[0]: 3, non_query_tokens[1]: 1, non_query_tokens[2]: 1}
             labels = {query_token: random.choice([0, 1]), 
                       non_query_tokens[0]: random.choice([0, 1]), 
                       non_query_tokens[1]: random.choice([0, 1]), 
@@ -220,14 +217,19 @@ class ICLVocabGenerator:
         """
         dataset = []
         if sample_func is None:
-            sample_func = self.zipfian
+            sample_func = self.zipfian  
             
         training_tokens = self.tokens
         for _ in range(num_examples):
             seq = []
 
-            context_tokens = random.sample(training_tokens, k=8)
-            query_token = random.choice([t for t in training_tokens if t not in context_tokens]) #sample_func()
+            # context_tokens = random.sample(training_tokens, k=8)
+            query_token = sample_func()#random.choice([t for t in training_tokens if t not in context_tokens])
+            context_tokens = []
+            while len(context_tokens) < 8:
+                curr_token = sample_func()
+                if curr_token != query_token:
+                    context_tokens.append(curr_token)
             for token in context_tokens:
                 label = self.token_label_map[token]
                 label_token = self.label_tokens[label]

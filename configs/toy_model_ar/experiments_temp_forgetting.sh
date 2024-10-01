@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=toy_model_ar
-#SBATCH --output=outputs/toy_model_ar/slurm_out/log_%a.out
-#SBATCH --error=outputs/toy_model_ar/slurm_out/log_%a.err
+#SBATCH --job-name=toy_model_ar_sf3
+#SBATCH --output=outputs/toy_model_ar/slurm_out/log_sf1_%a.out
+#SBATCH --error=outputs/toy_model_ar/slurm_out/log_sf1_%a.err
 #SBATCH --array=0-45%45
 #SBATCH --time=24:00:00
 #SBATCH --mem=64G
@@ -33,4 +33,4 @@ curr_a=${a_s[$a_index]}
 # prop_amb_ind=$((SLURM_ARRAY_TASK_ID / 16))
 
 echo "Running with k: $curr_k, a: $curr_a, num examples: $curr_num_examples"
-python3 $EXPERIMENT_SRC_DIR/toy_model_ar.py --num_epochs 10 --amb_ratio 0.10 --forget_steps $curr_k --num_train_examples $curr_num_examples --a $curr_a  --output_dir "outputs/toy_model_ar/forg_k_$curr_k-numtr_$curr_num_examples-a_$curr_a"
+python3 $EXPERIMENT_SRC_DIR/toy_model_ar.py --num_epochs 10 --amb_ratio 0.05 --forget_steps $curr_k --stop_forgetting_after 10000 --num_train_examples $curr_num_examples --a $curr_a  --output_dir "outputs/toy_model_ar/sforg2_k_$curr_k-numtr_$curr_num_examples-a_$curr_a"

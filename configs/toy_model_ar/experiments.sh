@@ -23,8 +23,8 @@ amb_index=$(( SLURM_ARRAY_TASK_ID / 15 ))
 num_example_index=$(( (SLURM_ARRAY_TASK_ID % 15 ) % 3 ))
 a_index=$(( (SLURM_ARRAY_TASK_ID % 15) / 3 ))
 
-curr_amb=${amb_s[$a_index]}
-curr_num_examples=${num_examples[$a_index]}
+curr_amb=${amb_s[$amb_index]}
+curr_num_examples=${num_examples[$num_example_index]}
 curr_a=${a_s[$a_index]}
 
 

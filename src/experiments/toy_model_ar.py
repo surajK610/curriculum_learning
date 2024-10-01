@@ -151,10 +151,12 @@ def train(model,
          val_loader,
          eval_loader_in_context_holdout,
          eval_loader_in_context, 
-         eval_loader_in_weights
+         eval_loader_in_weights,
+         steps_eval=100
          ):
     model.train()
     metrics = {'context': [], 'weights': [], 'holdout': [], 'val': []}
+    total_steps = 0
     for epoch in range(num_epochs):
         total_loss = 0
         for step, batch in enumerate(train_loader):
@@ -179,14 +181,14 @@ def train(model,
             optimizer.step()
             scheduler.step()
             total_loss += loss.item()
-            _forget_embeddings(optimizer, model, step)
+            _forget_embeddings(optimizer, model, total_steps)
 
             # Print loss every 100 steps or at the end of epoch
             if (step + 1) % 1000 == 0 or (step + 1) == len(train_loader):
                 avg_loss = total_loss / (step + 1)
                 print(f"Epoch [{epoch+1}/{num_epochs}], Step [{step+1}/{len(train_loader)}], Loss: {avg_loss:.4f}")
                 
-            if (step + 1) % 100 == 0:
+            if (step + 1) % steps_eval == 0:
                 metrics['holdout'].append(evaluate_in_context(
                             model, eval_loader_in_context_holdout, device, vocab_gen.eval_label_tokens))
                 metrics['context'].append(evaluate_in_context(
@@ -194,7 +196,8 @@ def train(model,
                 metrics['weights'].append(evaluate(model, eval_loader_in_weights, device))
                 metrics['val'].append(evaluate(model, val_loader, device))
                 
-                            
+            total_steps +=1
+            # print(total_steps)
                             
                 # Evaluate at the end of each epoch
         in_context_accuracy = evaluate_in_context(
