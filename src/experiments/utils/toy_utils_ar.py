@@ -89,7 +89,10 @@ class ICLVocabGenerator:
     def zipfian(self):
         return self._zipfian(self.tokens)
     
-    def create_dataset_task_icl(self, num_examples: int, sample_func: Callable = None, bursty_ratio: float = 0.0) -> List[List[int]]:
+    def create_dataset_task_icl(self, num_examples: int, 
+                                sample_func: Callable = None, 
+                                bursty_ratio: float = 0.0, 
+                                amb_ratio: float = 0.05) -> List[List[int]]:
         """
         Generate training dataset with sequences sampled from sample_func distribution.
         Each sequence ends with a query token and its label.
@@ -124,7 +127,7 @@ class ICLVocabGenerator:
             token_counts = {query_token: 4, non_query_tokens[0]: 4, non_query_tokens[1]: 0, non_query_tokens[2]: 0}
             labels = {}
             for token in token_counts.keys():
-                if random.random() > 0.95:
+                if random.random() > 1 - amb_ratio:
                     labels[token] = random.choice(self.tokens)
                 else:
                     labels[token] = self.token_label_map[token]

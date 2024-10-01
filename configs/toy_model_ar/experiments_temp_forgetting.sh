@@ -33,4 +33,4 @@ curr_a=${a_s[$a_index]}
 # prop_amb_ind=$((SLURM_ARRAY_TASK_ID / 16))
 
 echo "Running with k: $curr_k, a: $curr_a, num examples: $curr_num_examples"
-python3 $EXPERIMENT_SRC_DIR/toy_model_ar.py --num_epochs 10 --amb_ratio 0.05 --forget_steps $curr_k --stop_forgetting_after 10000 --num_train_examples $curr_num_examples --a $curr_a  --output_dir "outputs/toy_model_ar/sforg2_k_$curr_k-numtr_$curr_num_examples-a_$curr_a"
+python3 $EXPERIMENT_SRC_DIR/toy_model_ar.py --num_epochs 4 --bursty_ratio 0.95 --amb_ratio 0.05 --forget_steps $curr_k --stop_forgetting_after 10000 --num_train_examples $curr_num_examples --a $curr_a  --output_dir "outputs/toy_model_ar/sforg2_k_$curr_k-numtr_$curr_num_examples-a_$curr_a"

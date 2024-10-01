@@ -312,7 +312,8 @@ def main(args):
          val_loader,
          eval_loader_in_context_holdout,
          eval_loader_in_context, 
-         eval_loader_in_weights
+         eval_loader_in_weights,
+         args.steps_eval
          )
     print('saving results...', flush=True)
     output_dir = args.output_dir
@@ -344,5 +345,7 @@ if __name__ == "__main__":
     parser.add_argument('--forget_steps', type=int, default=0)
     parser.add_argument('--stop_forgetting_after', type=int, default=1000000)
     parser.add_argument('--weight_decay', type=float, default=0.01)
+    parser.add_argument('--steps_eval', type=int, default=100)
+    
     args = parser.parse_args()
     main(args)
